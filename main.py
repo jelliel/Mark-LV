@@ -668,6 +668,24 @@ class JarvisLive:
         ready = bool(self._wake_detector and self._wake_detector.ready) or wake_is_ready()
         return {"enabled": self._wake_enabled, "awake": self._awake, "ready": ready}
 
+    def is_signoff(self, original_text: str, cleaned_text: str) -> bool:
+        # If the original text ends with a question mark, it's not a sign-off
+        if original_text.strip().endswith('?'):
+            return False
+        # Remove trailing punctuation from cleaned_text (we already removed in _clean_transcript, but just in case)
+        cleaned_text = cleaned_text.rstrip('.!?')
+        words = cleaned_text.split()
+        # If too long, not a sign-off
+        if len(words) > 3:
+            return False
+        signoff_phrases = {
+            "thanks", "thank you", "got it", "will do", "perfect", "cool", "bye",
+            "right on", "sounds good", "okay", "ok", "great", "alright"
+        }
+        if cleaned_text in signoff_phrases:
+            return True
+        return False
+
     def _ensure_wake_detector(self) -> bool:
         """Load the detector once (model loads on first start). Idempotent."""
         if self._wake_detector is None:
