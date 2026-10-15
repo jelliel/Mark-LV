@@ -321,7 +321,11 @@ class _SysMetrics:
         if self._pynvml_ok is not False:
             try:
                 if self._pynvml_h is None:
-                    import pynvml  # type: ignore
+                    try:
+                        import pynvml  # type: ignore
+                    except ImportError:
+                        # nvidia-ml-py provides the pynvml module
+                        import nvidia_ml_py as pynvml  # type: ignore
                     pynvml.nvmlInit()
                     self._pynvml    = pynvml
                     self._pynvml_h  = pynvml.nvmlDeviceGetHandleByIndex(0)
