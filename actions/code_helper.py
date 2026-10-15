@@ -1,9 +1,18 @@
+"""
+Updated code_helper.py with AFC deprecation fix.
+
+Replace all generate_content calls with safe_generate_content from gemini_afc_fix.
+"""
+
 import subprocess
 import sys
 import json
 import re
 import time
 from pathlib import Path
+
+from core import gemini
+from .gemini_afc_fix import safe_generate_content
 
 
 def get_base_dir():
@@ -15,6 +24,7 @@ BASE_DIR           = get_base_dir()
 API_CONFIG_PATH    = BASE_DIR / "config" / "api_keys.json"
 DESKTOP            = Path.home() / "Desktop"
 MAX_BUILD_ATTEMPTS = 3
+
 # Model choice lives in core/gemini.py, and so does the timeout and the
 # fallback ladder. Writing a model name here is what left this file hanging
 # forever whenever that one alias was unwell.
@@ -31,7 +41,8 @@ def _get_gemini(tier: str = gemini.SMART):
     whole file can come back."""
     class _W:
         def generate_content(self, contents):
-            resp = gemini.call(contents, tier=tier, timeout_ms=60000)
+            # Use the AFC-safe wrapper instead of direct generate_content
+            resp = safe_generate_content(gemini.client(), contents, tier=tier)
             if resp is None:
                 raise RuntimeError("every Gemini model on the ladder failed")
             return resp
@@ -150,7 +161,7 @@ def _detect_intent(description: str, file_path: str, code: str) -> str:
                 "  optimize     = refactor / clean up / speed up existing code\n\n"
                 "Reply with ONLY the intent word, nothing else."
             )
-            ans = _get_gemini().generate_content(prompt).text.strip().lower()
+            ans = safe_generate_content(gemini.client(), prompt, tier=gemini.SMART).text.strip().lower()
             ans = ans.strip("`'\". \n")
             if ans in _VALID_INTENTS:
                 return ans
@@ -163,6 +174,7 @@ def _detect_intent(description: str, file_path: str, code: str) -> str:
     if code:
         return "explain"
     return "write"
+
 
 def _write(description: str, language: str, output_path: str, player=None) -> tuple[str, Path]:
     lang  = language or "python"
@@ -181,7 +193,7 @@ Description: {description}
 
 Code:"""
 
-    response = model.generate_content(prompt)
+    response = safe_generate_content(model, prompt)
     code     = _clean_code(response.text)
     path     = _resolve_save_path(output_path, lang)
     _save_file(path, code)
@@ -204,7 +216,7 @@ Broken code:
 
 Fixed code:"""
 
-    response = model.generate_content(prompt)
+    response = safe_generate_content(model, prompt)
     return _clean_code(response.text)
 
 
@@ -235,7 +247,6 @@ def _run_file(path: Path, args: list, timeout: int) -> str:
         if output: parts.append(f"Output:\n{output}")
         if error:  parts.append(f"Stderr:\n{error}")
         return "\n\n".join(parts) if parts else "Executed with no output."
-
     except subprocess.TimeoutExpired:
         return f"Timed out after {timeout}s."
     except FileNotFoundError:
@@ -297,6 +308,7 @@ def _build(description, language, output_path, args, timeout, speak=None, player
     if speak: speak(msg)
     return f"{msg}\n\nLast code saved to: {path}"
 
+
 def _write_action(description, language, output_path, player) -> str:
     if not description:
         return "Please describe what you want me to write, sir."
@@ -336,7 +348,7 @@ Original code:
 Updated code:"""
 
     try:
-        response = model.generate_content(prompt)
+        response = safe_generate_content(model, prompt)
         edited   = _clean_code(response.text)
     except Exception as e:
         return f"Could not edit code: {e}"
@@ -368,7 +380,7 @@ Code:
 Explanation:"""
 
     try:
-        response = model.generate_content(prompt)
+        response = safe_generate_content(model, prompt)
         return response.text.strip()
     except Exception as e:
         return f"Could not explain code: {e}"
@@ -386,7 +398,6 @@ def _run_action(file_path, args, timeout, player) -> str:
 
 
 def _optimize_action(file_path, code, language, output_path, player) -> str:
-
     if file_path and not code:
         code, err = _read_file(file_path)
         if err:
@@ -415,7 +426,7 @@ Original code:
 Optimized code:"""
 
     try:
-        response  = model.generate_content(prompt)
+        response  = safe_generate_content(model, prompt)
         optimized = _clean_code(response.text)
     except Exception as e:
         return f"Could not optimize code: {e}"
@@ -442,17 +453,14 @@ Optimized code:"""
 
 
 def _screen_debug_action(description, file_path, player, speak=None) -> str:
-
     if player:
         player.write_log("[Code] Taking screenshot for analysis...")
 
     print("[Code] 📸 Capturing screen for debug...")
 
-
     screenshot_path = _take_screenshot()
     if not screenshot_path:
         return "Could not take screenshot, sir. Please make sure PyAutoGUI is installed."
-
 
     file_content = ""
     if file_path:
@@ -479,7 +487,8 @@ User's question: {user_question}{context}
 Please:
 1. Identify any errors, exceptions, or problems visible on the screen
 2. Explain what is causing the problem in simple terms
-3. Provide a concrete fix or solution
+2. Provide a concrete fix or solution
+3. If there's code visible, show the corrected version
 4. If there's code visible, show the corrected version
 
 Be specific and actionable. If you see an error message, quote it exactly."""
@@ -489,7 +498,7 @@ Be specific and actionable. If you see an error message, quote it exactly."""
             analysis_prompt,
         ]
 
-        response = gemini.call(contents, tier=gemini.SMART, timeout_ms=45_000)
+        response = safe_generate_content(gemini.client(), analysis_prompt)
         if response is None:
             return "Sir, I couldn't reach Gemini to analyse that screenshot."
 
@@ -514,7 +523,6 @@ Be specific and actionable. If you see an error message, quote it exactly."""
         return analysis
 
     except Exception as e:
-
         try:
             screenshot_path.unlink()
         except Exception:
@@ -533,8 +541,8 @@ def code_helper(
     Called from main.py.
 
     parameters:
-        action      : write | edit | explain | run | build | screen_debug | optimize | auto
-        description : What the code should do / what change to make / what problem to analyze
+        action      : write | edit | explain | run | build | auto (default: auto)
+        description : What the code should do or what change to make
         language    : Programming language (default: python)
         output_path : Where to save — user specifies full path or filename
         file_path   : Path to existing file (edit / explain / run / build / optimize)
