@@ -694,8 +694,7 @@ class JarvisLive:
                 if selected_id >= 0:
                     selected_agent = agents[selected_id]
                     self.ui.write_log(f"[Ingestion] Learning selected: {selected_agent} for file {path}")
-                    # TODO: call actual training endpoint for the agent
-                    # For now just log
+                    self._train_theological_agent(selected_agent, path)
             else:
                 self.ui.write_log("[Ingestion] Learning cancelled")
         # If cancel clicked, do nothing
@@ -722,6 +721,12 @@ class JarvisLive:
         self.ui.on_wake_toggle   = self._ui_wake_toggle   # (enable: bool) -> str
         self.ui.on_wake_manual   = self._ui_wake_manual   # () -> toggle awake/asleep
         self.ui.on_wake_install  = self._ui_wake_install  # () -> (ok, msg)
+
+    def _train_theological_agent(self, agent_name: str, file_path: str):
+        """Placeholder for training a theological agent with the given file.
+        Replace this with actual training logic or API call."""
+        self.ui.write_log(f"[Ingestion] Training agent '{agent_name}' with file '{file_path}' (stub)")
+        # TODO: implement actual training, e.g., call an API, run a script, etc.
 
     # ── Wake word: state machine ─────────────────────────────────────────────
 
