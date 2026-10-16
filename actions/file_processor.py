@@ -48,6 +48,12 @@ def _gemini_client(tier: str = gemini.SMART):
 
 
 def _detect_type(path: Path) -> str:
+    name = path.name.lower()
+    # Handle common double extensions
+    if name.endswith('.pdf.docx') or name.endswith('.docx.pdf'):
+        return 'docx'   # treat as docx
+    if name.endswith('.pdf.txt') or name.endswith('.txt.pdf'):
+        return 'txt'
     ext = path.suffix.lower().lstrip(".")
     image_exts = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "svg", "ico"}
     video_exts = {"mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v", "3gp"}
