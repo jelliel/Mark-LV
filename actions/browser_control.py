@@ -509,7 +509,7 @@ class _BrowserSession:
         Instead of opening a new blank tab (about:blank), it adopts that tab —
         so the user never sees an extra blank tab.
         """
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.1)
         pages = self._context.pages
         return pages[0] if pages else await self._context.new_page()
 
