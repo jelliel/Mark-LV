@@ -1168,7 +1168,7 @@ class JarvisLive:
             elif name == "screen_process":
                 import time as _t_mod
                 _now = _t_mod.monotonic()
-                _cooldown = 4.0  # seconds — covers echo window after speaking ends
+                _cooldown = 1.5  # seconds — prevent duplicate vision calls
                 if self._vision_busy or (_now - self._vision_last_time) < _cooldown:
                     _wait = max(0, _cooldown - (_now - self._vision_last_time))
                     print(f"[Vision] ⏳ Cooldown active ({_wait:.1f}s remaining) — ignoring duplicate call")
