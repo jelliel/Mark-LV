@@ -636,6 +636,68 @@ class JarvisLive:
         self.ui.get_plugins = self._plugin_registry.list_for_ui
         self.ui.get_plugin_settings = self._plugin_registry.settings_schemas  # ⚙ settings tab
         self.ui.request_say = self.plugin_say   # plugins: mid-task speech channel
+        self.ui.file_selected.connect(self.on_file_selected)
+
+    def on_file_selected(self, path: str):
+        """Handle file dropped into the ingestion box: show a popup to choose
+        between Analyse and Learn, and for Learn list theological agents."""
+        from PyQt6.QtWidgets import QMessageBox, QInputDialog, QListWidget, QListWidgetItem, QDialog, QVBoxLayout, QPushButton, QHBoxLayout, QLabel, QRadioButton, QButtonGroup
+        from pathlib import Path
+        import asyncio
+
+        # First ask action
+        msg = QMessageBox(self.ui)
+        msg.setWindowTitle("File ingested")
+        msg.setText(f"File selected: {Path(path).name}")
+        msg.setInformativeText("What would you like to do with this file?")
+        analyse_btn = msg.addButton("Analyse", QMessageBox.ButtonRole.ActionRole)
+        learn_btn = msg.addButton("Learn", QMessageBox.ButtonRole.ActionRole)
+        msg.addButton(QMessageBox.StandardButton.Cancel)
+        msg.setDefaultButton(analyse_btn)
+        msg.exec()
+        clicked = msg.clickedButton()
+
+        if clicked == analyse_btn:
+            # Just call existing file processor via tool? We'll just invoke file_processor describe as placeholder
+            async def do_analyse():
+                # Use the existing file_processor tool via the session? For simplicity, we'll just log.
+                self.ui.write_log(f"[Ingestion] Analyse not fully implemented; would process {path}")
+                # Optionally, you could call the file_processor tool here via self.session.send_client_content...
+            if self._loop and self.session:
+                asyncio.run_coroutine_threadsafe(do_analyse(), self._loop)
+            return
+
+        if clicked == learn_btn:
+            # List theological agents (placeholder list)
+            agents = ["Theological Agent 1", "Theological Agent 2", "Theological Agent 3"]
+            # Use a custom dialog with radio buttons
+            dialog = QDialog(self.ui)
+            dialog.setWindowTitle("Select theological agent for learning")
+            layout = QVBoxLayout(dialog)
+            label = QLabel("Choose the agent to train with this file:")
+            layout.addWidget(label)
+            radio_group = QButtonGroup(dialog)
+            for i, name in enumerate(agents):
+                rb = QRadioButton(name)
+                radio_group.addButton(rb, i)
+                layout.addWidget(rb)
+            buttons = QHBoxLayout()
+            ok_btn = QPushButton("OK")
+            cancel_btn = QPushButton("Cancel")
+            buttons.addWidget(ok_btn)
+            buttons.addWidget(cancel_btn)
+            layout.addLayout(buttons)
+            ok_btn.clicked.connect(dialog.accept)
+            cancel_btn.clicked.connect(dialog.reject)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                selected_id = radio_group.checkedId()
+                if selected_id >= 0:
+                    selected_agent = agents[selected_id]
+                    self.ui.write_log(f"[Ingestion] Learning selected: {selected_agent} for file {path}")
+                    self._train_theological_agent(selected_agent, path)
+            else:
+                self.ui.write_log("[Ingestion] Learning cancelled")
+        # If cancel clicked, do nothing
 
         # ── Wake word ────────────────────────────────────────────────────────
         # _awake gates the mic (see _listen_audio) and the background speakers.
@@ -659,6 +721,12 @@ class JarvisLive:
         self.ui.on_wake_toggle   = self._ui_wake_toggle   # (enable: bool) -> str
         self.ui.on_wake_manual   = self._ui_wake_manual   # () -> toggle awake/asleep
         self.ui.on_wake_install  = self._ui_wake_install  # () -> (ok, msg)
+
+    def _train_theological_agent(self, agent_name: str, file_path: str):
+        """Placeholder for training a theological agent with the given file.
+        Replace this with actual training logic or API call."""
+        self.ui.write_log(f"[Ingestion] Training agent '{agent_name}' with file '{file_path}' (stub)")
+        # TODO: implement actual training, e.g., call an API, run a script, etc.
 
     # ── Wake word: state machine ─────────────────────────────────────────────
 
@@ -1186,7 +1254,7 @@ class JarvisLive:
             elif name == "screen_process":
                 import time as _t_mod
                 _now = _t_mod.monotonic()
-                _cooldown = 4.0  # seconds — covers echo window after speaking ends
+                _cooldown = 1.5  # seconds — prevent duplicate vision calls
                 if self._vision_busy or (_now - self._vision_last_time) < _cooldown:
                     _wait = max(0, _cooldown - (_now - self._vision_last_time))
                     print(f"[Vision] ⏳ Cooldown active ({_wait:.1f}s remaining) — ignoring duplicate call")
