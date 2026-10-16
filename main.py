@@ -670,6 +670,7 @@ class JarvisLive:
         if clicked == learn_btn:
             # List theological agents from the Agents folder on desktop
             agents_dir = Path(r"C:\Users\toshr\Desktop\Agents")
+            self.ui.write_log(f"[Ingestion] Agents dir: {agents_dir}, exists: {agents_dir.is_dir()}")
             agent_files = []
             if agents_dir.is_dir():
                 for f in agents_dir.iterdir():
