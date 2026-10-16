@@ -668,8 +668,19 @@ class JarvisLive:
             return
 
         if clicked == learn_btn:
-            # List theological agents (placeholder list)
-            agents = ["Theological Agent 1", "Theological Agent 2", "Theological Agent 3"]
+            # List theological agents from the Agents folder on desktop
+            agents_dir = Path(r"C:\Users\toshr\Desktop\Agents")
+            agent_files = []
+            if agents_dir.is_dir():
+                for f in agents_dir.iterdir():
+                    if f.is_file() and f.suffix.lower() == ".md" and not f.name.startswith("."):
+                        agent_files.append(f.stem)  # filename without extension
+                self.ui.write_log(f"[Ingestion] Found {len(agent_files)} agent files: {agent_files}")
+            # Fallback placeholder if none found
+            if not agent_files:
+                agent_files = ["Theological Agent 1", "Theological Agent 2", "Theological Agent 3"]
+                self.ui.write_log("[Ingestion] No agent files found, using fallback")
+            agents = agent_files
             # Use a custom dialog with radio buttons
             dialog = QDialog(self.ui)
             dialog.setWindowTitle("Select theological agent for learning")
@@ -681,6 +692,8 @@ class JarvisLive:
                 rb = QRadioButton(name)
                 radio_group.addButton(rb, i)
                 layout.addWidget(rb)
+                if i == 0:
+                    rb.setChecked(True)  # select first by default
             buttons = QHBoxLayout()
             ok_btn = QPushButton("OK")
             cancel_btn = QPushButton("Cancel")
@@ -689,15 +702,20 @@ class JarvisLive:
             layout.addLayout(buttons)
             ok_btn.clicked.connect(dialog.accept)
             cancel_btn.clicked.connect(dialog.reject)
-            if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.ui.write_log(f"[Ingestion] Showing agent selection dialog")
+            result = dialog.exec()
+            self.ui.write_log(f"[Ingestion] Agent selection dialog closed with result {result}")
+            if result == QDialog.DialogCode.Accepted:
                 selected_id = radio_group.checkedId()
                 if selected_id >= 0:
                     selected_agent = agents[selected_id]
                     self.ui.write_log(f"[Ingestion] Learning selected: {selected_agent} for file {path}")
                     self._train_theological_agent(selected_agent, path)
+                else:
+                    self.ui.write_log("[Ingestion] No agent selected")
             else:
                 self.ui.write_log("[Ingestion] Learning cancelled")
-        # If cancel clicked, do nothing
+            return  # avoid falling through
 
         # ── Wake word ────────────────────────────────────────────────────────
         # _awake gates the mic (see _listen_audio) and the background speakers.
