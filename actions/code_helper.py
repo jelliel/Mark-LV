@@ -1,7 +1,12 @@
 """
-Updated code_helper.py with AFC deprecation fix.
+The code assistant: explain, fix, optimise, document, run.
 
-Replace all generate_content calls with safe_generate_content from gemini_afc_fix.
+The Gemini calls go through the AFC-safe wrapper in `gemini_afc_fix.py` at the
+application root — the route the SDK now recommends, with the model's ladder
+behind it. `actions/` is not a package (it is loaded by path), so that file
+cannot be reached with a relative import: it is loaded by path, and when it is
+missing the plain call is used instead. An import that cannot resolve would
+cost the whole action, and with it the tool.
 """
 
 import subprocess
@@ -9,10 +14,40 @@ import sys
 import json
 import re
 import time
+import importlib.util
 from pathlib import Path
 
 from core import gemini
-from .gemini_afc_fix import safe_generate_content
+
+
+def _load_afc_fix():
+    """`gemini_afc_fix.py`, loaded by path from the application root."""
+    path = Path(__file__).resolve().parent.parent / "gemini_afc_fix.py"
+    try:
+        spec = importlib.util.spec_from_file_location("markliv_gemini_afc_fix", path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load {path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["markliv_gemini_afc_fix"] = module
+        spec.loader.exec_module(module)
+        return module
+    except Exception as e:
+        print(f"[Code] AFC wrapper unavailable ({e}) — using the plain call")
+        return None
+
+
+_AFC = _load_afc_fix()
+
+
+def safe_generate_content(client, prompt: str, tier: str = "smart"):
+    """One generation, as a response object (it has `.text`).
+
+    The wrapper is the one in `gemini_afc_fix.py`; without it the ladder in
+    `core/gemini.py` answers instead — slower to change, but it answers."""
+    if _AFC is not None:
+        return _AFC.safe_generate_content(client, prompt, tier=tier)
+    tier_enum = gemini.FAST if tier == "fast" else gemini.SMART
+    return gemini.call(contents=prompt, tier=tier_enum)
 
 
 def get_base_dir():
