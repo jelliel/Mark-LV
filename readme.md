@@ -65,6 +65,11 @@ It's not just an assistant — it's an extension of your digital life.
 | 🌤️ Weather Report | Live weather data for your city, personalized from memory |
 | 🗺️ Dynamic Content Panel | Scrollable display layer beneath the HUD that renders web results, news, and search data |
 | 🔍 Multi-Mode Web Search | `news` / `research` / `price` / `compare` / `search` — Gemini Grounded first, DDG fallback |
+| 🦌 Deep Research | A DeerFlow-style loop — plan, parallel readers, contradiction analysis, cited Markdown report — in the background while you keep talking |
+| 🧭 Research Sub-Agents | Planner, researcher, analyst, critic and writer, each with its own instructions and its own job — overridable with one Markdown file |
+| 📜 Declarative Skills | Markdown skills the planner selects per topic: sourcing, comparison, fact-check, technical due diligence, theology source critique |
+| ♻️ Resumable Reports | Every source, note and outline is on disk — a failed or cancelled run is rebuilt from its notes without re-reading a page |
+| 🕳️ Vault Gap Trigger | A theology question the vault cannot answer starts a deep run by itself, and the finished report is filed back as a synthesis page — measured coverage, one run at a time, 30-minute cooldown |
 | ⏰ Smart Reminders | OS-native scheduled notifications (Windows Task Scheduler / macOS LaunchAgent / Linux systemd) |
 | 📂 File Processor | Read, summarize, and answer questions about local files |
 | 🌐 Browser Control | Open URLs, navigate tabs, and interact with the browser by voice |
@@ -157,6 +162,218 @@ This is not only tidiness. Every bundled skill is declared to the model on **eve
 > Built on the Mark LI–LIV foundation: the **🧑‍🎤 Holographic Avatar**, **👄 Lip-Sync**, **🎚️ Push-to-Talk**, **🔇 Self-Echo Guard**, **🧩 Plugin System**, **♾️ Unlimited Sessions**, **🎨 Live Theming** and **🎙️ Wake Word** are all still here.
 
 ---
+
+## 🦌 DeerFlow, natively — the research loop, not the platform
+
+DeerFlow 2.0 is a **super-agent harness**: a LangGraph lead agent, a sub-agent
+runtime, declarative skills, a sandbox, an MCP gateway, IM channels and a
+Next.js console. Its harness alone is **756 Python files and 185,000 lines**;
+the console wants Node 22 and pnpm, and the sandbox wants Docker. Bolting that
+next to a single-process voice assistant would trade this app's one dependency
+for four, and its one window for a second control plane.
+
+What was worth taking is the loop that made DeerFlow useful, and that is what
+`research/` now is — **five stages, one thread pool, no new dependency**:
+
+| Stage | What happens | Why it is its own stage |
+|---|---|---|
+| **Plan** | the topic becomes 3–7 sub-questions, each with real search queries, plus the skills this topic needs | a plan you can read is a plan you can argue with |
+| **Research** | per round: search in parallel → number the sources → fetch in parallel → one reader per question | reading is the slow part, and it is embarrassingly parallel |
+| **Analyse** | the notes become one outline: claims, sources, contradictions, gaps, confidence | reconciliation is a different job from summarising |
+| **Critique** | every claim is checked against the evidence and corrected before it is polished (deep runs) | prose hides a weak claim; an outline does not |
+| **Write** | one call per section, then header, limits, sources and method are added by code | a long report should not depend on a single reply arriving intact |
+
+### Three things that are structural, not prompted
+
+**Citations cannot be invented.** Sources are numbered once, by the coordinator,
+*before* anyone reads them. A reader cites the page it was handed; a section
+writer can only cite numbers from the source list it was given; and `report.py`
+parses every `[n]`, expands ranges, and **deletes any marker pointing at a source
+the run never fetched**. A report that cites a page which does not exist is worse
+than one that cites fewer, so the guarantee lives in code instead of in a
+sentence asking the model to be careful.
+
+**Gaps drive the next round.** Round two is not "search again". It is the
+analyst's own list of unanswered questions, capped at three. When the first
+round answered everything, the run stops early and says so — the budget is spent
+on what is missing, not on repetition.
+
+**A run survives its own failure.** Plan, sources, notes and pages are written
+to disk as they arrive, `run.json` atomically. `resume` rebuilds the report from
+the notes **without fetching a page again** — the test suite proves it by making
+every search and fetch raise.
+
+### When the vault cannot answer, it goes and finds out
+
+The theology vault is the first place a theological question should be answered
+from — it is local, it is the user's own reading, and it costs nothing. Its
+weakness is the same as its strength: it only knows what was put in it. Until
+now a miss produced *"No wiki page matches"* and nothing was learned.
+
+`research/theology.py` closes the loop:
+
+```
+search  →  coverage measured  →  gap  →  deep run  →  report filed as synthesis
+```
+
+**A gap is measured, not guessed — and the question is measured as a SUBJECT,
+not as a bag of words.** "peux-tu m'expliquer le concile de Chalcédoine" is
+about one thing, and a vault that holds that thing answers it. So the framing of
+the request (*explique*, *raconte-moi*, *peux-tu*) and the generic scaffolding
+(*l'histoire de…*, *ses conséquences*) are removed before anything is compared,
+and what is left is the subject. The vault is bilingual by nature — the
+question is French, the source may be Latin or English — so words that have two
+names are folded together: a page titled **Council of Nicaea** answers
+*concile de Nicée*.
+
+The subject of a question is the term the vault carries in a **title**: a page
+titled *Chalcédoine* is a page written about Chalcédoine, while a page that
+mentions it once in a paragraph is not. A question is a gap when the vault holds
+no page about its subject, or when the rest of the question is nowhere in the
+vault. Zero pages is a gap; an **empty** vault is not — a brain nobody uses yet
+should not start buying reports. And a matching **raw** source is a lead, not a
+hole: the cheap next move is to structure what you already own, so that case
+does not trigger either.
+
+**Nobody pays twice.** One run at a time, through the same `research/jobs.py`
+the voice tool uses, with a 30-minute cooldown per question — and the cooldown
+is **written down**, so closing the app is not a way to buy the same report
+again, and asking the same question in different words is the same question. A
+gap that arrives while a run is already paying for the web is **queued**, not
+dropped, and served when that run is over. A **daily ceiling** (3 runs a day by
+default) bounds the whole thing: a gap is a trigger, not a purchase order.
+
+**The loop closes.** The finished report is written into the vault as a
+`synthesis` page — attribution line, source URLs in the metadata, indexed and
+pushed to XERJ like any other page — and its **title carries the subject**, so
+the next question about that subject reads the vault instead of buying the
+report again.
+
+Both search paths fire it: `theology_brain` (keyword) and `xerj_search`
+(semantic, and its fallback when the engine is down). The ceiling, the
+cooldown, the depth and the language are in the vault's settings section (⚙
+Settings → THEOLOGY BRAIN), and the whole trigger can be turned off there too.
+
+**The model knows what the vault holds.** A model cannot look for what it does
+not know exists — so the vault's subjects are mirrored into the prompt, and the
+assistant is told to search the vault before answering a theological question
+from memory. A question answered from memory is a question the vault never
+learns, and one that would otherwise be bought again on the next run.
+
+### The vault is consulted before the answer, not after it
+
+The mirror is a table of contents. The **consultation** is structural: the
+application asks the vault itself, while the user is still speaking, and hands
+what it finds to the conversation before the model writes a word.
+
+```
+user speaks  →  the vault is asked  →  [VAULT] the pages, with their text
+                                      →  the answer comes from them, cited
+```
+
+`actions/_vault_router.py` decides, in a few milliseconds and without a model:
+
+| what the message is | what happens |
+|---|---|
+| the vault holds pages whose **title** carries the question | those pages and their text are handed to the conversation |
+| a religious subject the vault does **not** hold | a deep research starts — and the assistant is told to say so and to wait |
+| anything else | nothing; the assistant answers as it would anywhere else |
+
+The two halves cannot disagree: the router, the vault's search and the trigger
+that spends money all use **one** tokenizer (`research/vocab.py`) and **one**
+measurement. A question the search finds is a question the trigger does not
+buy — the old version measured the question twice, with two different
+tokenizers, and a search that found a page could still be answered twice.
+
+A name or a date is not worth a report: *"who is the pope"* is answered from
+what the assistant knows, and only a question the vault could not settle is
+sent out to be researched.
+
+### From the chair
+
+Say **« lance une recherche approfondie sur le concile de Nicée »**. The tool
+returns in milliseconds and the run continues in the background: the HUD shows
+the stage, the source count and the notes; when the report lands the assistant
+speaks the three headline findings and puts the document on screen. Nothing in
+the conversation is blocked while it works.
+
+| You say | It does |
+|---|---|
+| « recherche approfondie sur X » | `standard` — 5 questions, ~18 pages, 2 rounds |
+| « recherche rapide » / « à fond » | `quick` — 3 questions, ~8 pages / `deep` — 7 questions, ~30 pages, 3 rounds + critique |
+| « où en est la recherche ? » | stage, sources, notes, elapsed |
+| « montre le rapport » / « ouvre le rapport » | on the HUD / in the system's Markdown app |
+| « annule la recherche » | stops at the next safe point, keeping what was read |
+| « reprends la recherche » | rewrites the report from the notes, no new searches |
+| « quelles compétences de recherche ? » | the skills a run can apply |
+
+### Skills and sub-agents are files, not code
+
+A **skill** is a Markdown file with a small frontmatter in
+`Documents/Mark LV Research/skills/`. Five ship with the app:
+
+| Skill | It changes how a run judges… |
+|---|---|
+| `sourced-brief` | what counts as evidence, and what must be labelled inference |
+| `fact-check` | claim decomposition, primary sources, a verdict per claim |
+| `comparative-analysis` | criteria before evidence, symmetric treatment, "no winner" allowed |
+| `technical-due-diligence` | versions, matched benchmarks, licence, advisories |
+| `theology-source-critique` | scripture / tradition / magisterium / scholarship kept apart, no anachronism |
+
+The planner sees the catalogue and picks; a body is loaded only for the run that
+chose it. A same-named file in your folder **overrides** the shipped one, so
+tuning a skill never means editing the application.
+
+A **sub-agent** is a Markdown file too, in `.../agents/`: frontmatter for
+`name`, `description`, `tools`, `max_sources`, and the body is the system prompt.
+Replace `researcher` and the reading changes; the rest of the pipeline does not
+care.
+
+### What is not ported, and why
+
+| DeerFlow | Here | Why |
+|---|---|---|
+| LangGraph graph, checkpoints | a thread pool and `run.json` | one user, one run — a graph engine would be a second runtime to debug |
+| Next.js console | the HUD's content panel | the window already exists, and voice is the input |
+| Docker sandbox, `coder` sub-agent | **not ported** | executing model-written code unattended is a security decision this app does not make for you |
+| MCP gateway, 30+ search providers, IM channels | DDG + Gemini grounded, the tools already installed | the app's promise is one key, no accounts |
+| Long-term memory store (DeerMem) | `memory/long_term.json` | the app already has a memory with a prompt budget |
+
+### Settings and files
+
+Everything lives in `Documents/Mark LV Research/`:
+
+```
+Mark LV Research/
+├── runs/<date>-<slug>/   # run.json · pages/ · notes/ · report.md
+├── agents/*.md           # your sub-agents (optional)
+└── skills/*.md           # your skills, overriding the shipped ones
+```
+
+| Key in `config/api_keys.json` | Default | What it does |
+|---|---|---|
+| `research_dir` | `Documents/Mark LV Research` | where runs, agents and skills live |
+| `research_max_parallel` | `4` | readers working at the same time |
+| `research_language` | `"auto"` | report language; `auto` follows the topic |
+| `research_voice_summary` | `true` | speak the headline when a run finishes |
+| `research_max_page_chars` | `4000` | how much of one page a reader is given |
+| `theology_auto_research` | `true` | start a run when the vault has no coverage |
+| `theology_auto_research_depth` | `"standard"` | `quick` / `standard` / `deep` for automatic runs |
+| `theology_auto_research_language` | `"auto"` | report language for automatic runs |
+| `theology_auto_research_cooldown` | `1800` | seconds before the same question may trigger again |
+
+### Measured, not assumed
+
+One `quick` run on *« Concile de Nicée et le Credo nicéen »*, on an ordinary
+Windows machine with the app's own key: **111.5 s**, **6 sources**, **3 notes**,
+a **5,658-character report** in French, every marker resolving to a source on
+disk. Four of the six sources could not be read — three grounded answers with no
+citable page and one PDF — and the report says so beside their numbers instead of
+quietly dropping them.
+
+The test suite runs the whole five-stage loop against a fake web and a fake
+model: **31 tests, 0.31 s, no network, no API key** —
+`python tests/test_research_engine.py`.
 
 ## 🔄 The Foundation Update — in every Mark from LII
 
@@ -328,6 +545,7 @@ Mark LV/
 │   ├── file_processor.py     # Document reading and summarization
 │   ├── send_message.py       # Messaging integration
 │   ├── weather_report.py     # Live weather data
+│   ├── deep_research.py      # Deep research — the voice entry point for research/
 │   ├── video_player.py       # Plays video on the HUD, where the avatar normally is
 │   └── desktop.py            # Desktop and taskbar control
 ├── memory/
@@ -349,6 +567,21 @@ Mark LV/
 │   ├── plugin_loader.py      # Plugin engine — discovery, validation, crash isolation
 │   ├── action_loader.py      # Bundled-action engine — the built-in twin of plugin_loader
 │   └── wake_word.py          # Local "Hey Jarvis" detector — own thread, offline, opt-in
+├── research/                 # the research loop, native — no Node, no Docker
+│   ├── engine.py             # plan → parallel readers → analysis → critique → write
+│   ├── subagents.py          # planner / researcher / analyst / critic / writer
+│   ├── skills.py             # declarative skills loader (Markdown, on demand)
+│   ├── skills/               # the shipped skills themselves
+│   ├── fetcher.py            # page → text, with a public-address policy
+│   ├── search.py             # reuses actions/web_search.py — no second provider
+│   ├── jobs.py               # one run at a time — shared by the voice tool and the vault
+│   ├── theology.py           # vault gap → deep run → synthesis page
+│   ├── store.py              # runs on disk: plan, sources, notes, report, resume
+│   ├── report.py             # citation validation and report assembly
+│   ├── llm.py                # every call through core/gemini.py
+│   └── config.py             # settings and folders
+├── tests/
+│   └── test_research_engine.py  # 31 tests, no network, no key
 └── config/
     ├── api_keys.json         # API key, name, voice, colour, toggles — created on first launch (git-ignored)
     └── certs/                # Self-signed TLS pair for the phone dashboard — generated locally (git-ignored)
@@ -361,6 +594,7 @@ Mark LV/
 | Asset | Source | Licence |
 | --- | --- | --- |
 | `core/face_model.obj` | [MediaPipe](https://github.com/google-ai-edge/mediapipe) canonical face model — 468 vertices of measured human face geometry | Apache License 2.0 |
+| Research loop design | [bytedance/deer-flow](https://github.com/bytedance/deer-flow) — the plan / research / analyse / critique / write pipeline | MIT. Ideas reimplemented in Python here; no code vendored |
 
 ---
 

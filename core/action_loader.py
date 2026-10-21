@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
+from memory.config_manager import get_plugin_config
+
 _NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$")
 _DEFAULT_PARAMS = {"type": "OBJECT", "properties": {}}
 _CTX_KEYS = ("player", "speak", "response", "session_memory")
@@ -65,6 +67,7 @@ class ActionRecord:
     error: str = ""
     behavior: Optional[str] = None     # None = the API's default (blocking)
     scheduling: Optional[str] = None   # None = the API's default (WHEN_IDLE)
+    settings: Optional[dict] = None    # optional PLUGIN_SETTINGS schema
 
 
 class ActionRegistry:
@@ -94,6 +97,29 @@ class ActionRegistry:
 
     def names(self) -> set[str]:
         return set(self._actions.keys())
+
+    # -- called by main.py to render the settings tab --
+    def settings_schemas(self) -> list[dict]:
+        """One entry per settings SECTION, for actions that declare a
+        PLUGIN_SETTINGS schema — the same contract a plugin uses.
+
+        An action that owns a knob (the theology vault's path, the ceiling on
+        automatic research) has to be able to show it: a setting the user
+        cannot find is a setting the user cannot turn off."""
+        out = []
+        for rec in self._actions.values():
+            if not rec.settings:
+                continue
+            ns = rec.settings.get("namespace") or rec.name
+            out.append({
+                "plugin":    rec.name,
+                "namespace": ns,
+                "title":     rec.settings.get("title") or rec.name,
+                "fields":    rec.settings.get("fields", []),
+                "values":    get_plugin_config(ns),
+                "action":    rec.settings.get("action"),
+            })
+        return out
 
     # -- called by main.py from _execute_tool --
     def run(self, name: str, parameters: dict, ctx: dict | None = None) -> str:
@@ -148,10 +174,17 @@ def _validate(module, filename: str) -> ActionRecord:
         return ActionRecord(name=name, file=filename,
                             error="TOOL['handler'] missing or not callable.")
 
+    # Optional, self-describing settings schema (rendered by the settings UI).
+    # A malformed schema is ignored, never fatal — the action still loads.
+    settings = getattr(module, "PLUGIN_SETTINGS", None)
+    if not (isinstance(settings, dict) and isinstance(settings.get("fields"), list)):
+        settings = None
+
     return ActionRecord(name=name, description=description.strip(), parameters=parameters,
                         handler=handler, file=filename, valid=True, error="",
                         behavior=_opt_upper(tool.get("behavior"), _BEHAVIORS),
-                        scheduling=_opt_upper(tool.get("scheduling"), _SCHEDULING))
+                        scheduling=_opt_upper(tool.get("scheduling"), _SCHEDULING),
+                        settings=settings)
 
 
 def discover_actions(actions_dir: Path, reserved_names: set[str] | None = None,

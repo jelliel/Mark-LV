@@ -5,6 +5,7 @@ import math
 import os
 import platform
 import random
+import re
 import subprocess
 import sys
 import threading
@@ -34,7 +35,8 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QBrush, QColor, QConicalGradient, QDragEnterEvent, QDropEvent, QFont,
     QFontDatabase, QKeySequence, QLinearGradient, QPainter, QPainterPath,
-    QPen, QPixmap, QRadialGradient, QShortcut,
+    QPen, QPixmap, QRadialGradient, QShortcut, QTextCharFormat, QTextCursor,
+    QTextDocument,
 )
 # Video playback for the HUD. Part of PyQt6, so it costs no new dependency —
 # but the multimedia plugins are a separate piece of the Qt install and can be
@@ -50,8 +52,9 @@ except Exception as _e:            # noqa: BLE001 - reported, never fatal
     print(f"[Video] playback unavailable ({_e}) — the HUD will not show video.")
 
 from PyQt6.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QMainWindow, QPushButton, QScrollArea, QSizePolicy, QSplitter,
+    QApplication, QComboBox, QDialog, QFileDialog, QFrame, QHBoxLayout, QLabel,
+    QLineEdit, QMainWindow, QPlainTextEdit, QListWidget, QPushButton,
+    QScrollArea, QSizePolicy, QSplitter,
     QGraphicsScene, QGraphicsView,
     QStackedWidget, QTextEdit, QVBoxLayout, QWidget, QProgressBar,
 )
@@ -2941,6 +2944,7 @@ class RemoteKeyOverlay(QWidget):
 
 class MainWindow(QMainWindow):
     _log_sig        = pyqtSignal(str)
+    _refs_sig       = pyqtSignal(str)        # assistant reply text → [[references]] chips
     _state_sig      = pyqtSignal(str)
     _content_sig    = pyqtSignal(str, str)   # (title, text) — thread-safe content display
     _reconfig_sig   = pyqtSignal()           # trigger setup overlay from any thread
@@ -3224,6 +3228,7 @@ class MainWindow(QMainWindow):
         self._update_metrics()
 
         self._log_sig.connect(self._log.append_log)
+        self._refs_sig.connect(self._on_refs)
         self._state_sig.connect(self._apply_state)
         self._content_sig.connect(self._show_content)
         self._reconfig_sig.connect(self._show_setup)
@@ -4105,6 +4110,9 @@ class MainWindow(QMainWindow):
         lay.addWidget(_sec("ACTIVITY LOG"))
         self._log = LogWidget()
         lay.addWidget(self._log, stretch=1)
+
+        self._refs_bar = _RefsBar()
+        lay.addWidget(self._refs_bar)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
@@ -5547,6 +5555,19 @@ class MainWindow(QMainWindow):
         if self.on_text_command:
             threading.Thread(target=self.on_text_command, args=(txt,), daemon=True).start()
 
+    def _on_refs(self, text: str):
+        """Parse [[brain references]] out of a finished reply and surface them
+        ALL in the chips bar — whatever the count. QMetaObject threads emit
+        here; parsing stays cheap and local."""
+        try:
+            if self._refs_bar is None or not text:
+                return
+            n = self._refs_bar.set_refs(_REFS_RE.findall(text))
+            if n:
+                self._log.append_log(f"REFS: {n} référence(s) du brain affichée(s)")
+        except Exception:
+            pass          # une puce ratée ne doit jamais tuer le HUD
+
     def _apply_state(self, state: str):
         self.hud.state    = state
         self.hud.speaking = (state == "SPEAKING")
@@ -5841,9 +5862,385 @@ class JarvisUI:
     def assistant_name(self) -> str:
         return self._win._assistant_name
 
+    def show_refs(self, text: str):
+        """Thread-safe: surface every [[brain reference]] of a reply as
+        clickable chips — however many the answer carries."""
+        self._win._refs_sig.emit(text)
+
     def start_speaking(self):
         self.set_state("SPEAKING")
 
     def stop_speaking(self):
         if not self.muted:
             self.set_state("LISTENING")
+
+# ── Brain references: chips bar + page popup ────────────────────────────────
+# Every [[Title]] the assistant quotes from the theology vault becomes a
+# clickable chip, below the activity log. Links are plain rich-text anchors,
+# so the bar simply wraps like text and shows the WHOLE list however long it
+# is. A chip opens the vault page it names (full text, no truncation).
+
+_REFS_RE = re.compile(r"\[\[([^\]\][]+)\]\]")
+
+
+def _vault_page(title: str):
+    """Resolve a [[Title]] reference onto the theology vault.
+
+    Returns (display_title, kind, body_text) or None. theology_brain is
+    loaded by path — actions/ is not a package. Read-only, local, instant.
+    """
+    try:
+        import importlib.util
+        path = Path(__file__).resolve().parent / "actions" / "theology_brain.py"
+        spec = importlib.util.spec_from_file_location("markliv_ui_theology", path)
+        tb = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tb)
+        tnorm = re.sub(r"\W+", " ", title.casefold()).strip()
+        for dirname, p in tb._iter_pages(tb._vault()):
+            meta, body = tb._read_page(p)
+            name = tb._page_title(p, meta) or p.stem
+            if re.sub(r"\W+", " ", name.casefold()).strip() == tnorm:
+                return name, dirname, body
+    except Exception as e:
+        print(f"[Refs] vault lookup failed for '{title}': {e}")
+    return None
+
+
+class _RefsBar(QFrame):
+    """One clickable chip per [[reference]] of the last reply — all of them.
+
+    Hidden until a reply carries references. The label wraps, so even a
+    fifty-reference answer fits: nothing is dropped, nothing truncated.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(
+            f"background: {C.PANEL}; border: 1px solid {C.BORDER_A};"
+            "border-radius: 4px;")
+        box = QVBoxLayout(self)
+        box.setContentsMargins(6, 3, 6, 4)
+        head_row = QHBoxLayout()
+        self._head = QLabel("▸ BRAIN REFERENCES")
+        self._head.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        self._head.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;"
+                                 "border: none;")
+        head_row.addWidget(self._head)
+        head_row.addStretch(1)
+        self._all_btn = QPushButton("Tout ouvrir")
+        self._all_btn.setFont(QFont("Courier New", 7))
+        self._all_btn.setStyleSheet(
+            f"color: {C.PRI}; background: {C.PRI_GHO};"
+            f"border: 1px solid {C.BORDER_A}; border-radius: 3px; padding: 2px 8px;")
+        self._all_btn.clicked.connect(self._open_all)
+        self._all_btn.hide()
+        head_row.addWidget(self._all_btn)
+        box.addLayout(head_row)
+        self._label = QLabel()
+        self._label.setWordWrap(True)
+        self._label.setOpenExternalLinks(False)
+        self._label.linkActivated.connect(self._open_ref)
+        self._label.setStyleSheet(f"color: {C.TEXT}; background: transparent;"
+                                  "border: none;")
+        box.addWidget(self._label)
+        self._current: list[str] = []
+        self.hide()                       # appears only when a reply cites
+
+    def set_refs(self, titles) -> int:
+        """Render every reference as a chip. Returns the count shown."""
+        seen, clean = set(), []
+        for title in titles:
+            title = re.sub(r"\s+", " ", str(title)).strip()
+            if title and title.casefold() not in seen:
+                seen.add(title.casefold())
+                clean.append(title)
+        self._current = clean
+        if not clean:
+            self._label.setText("")
+            self._all_btn.hide()
+            self.hide()
+            return 0
+        chips = "".join(
+            f'<a href="ref:{t}" style="color:{C.PRI}; text-decoration:none; '
+            f'background:{C.PRI_GHO};">&nbsp;{t}&nbsp;</a>&nbsp;'
+            for t in clean)
+        self._label.setText(chips)
+        if len(clean) >= 2:
+            self._all_btn.setText(f"Tout ouvrir ({len(clean)})")
+            self._all_btn.show()
+        else:
+            self._all_btn.hide()
+        self.show()
+        return len(clean)
+
+    def _open_all(self):
+        if self._current:
+            _RefsStacked(self._current).exec()
+
+    def _open_ref(self, href: str):
+        if not href.startswith("ref:"):
+            return
+        title = href[4:].strip()
+        page = _vault_page(title)
+        if page is None:
+            _RefMissing(title).exec()
+            return
+        _RefPage(*page).exec()
+
+
+class _RefPage(QDialog):
+    """The vault page a reference names: title, kind, FULL text."""
+
+    def __init__(self, title, kind, body, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"{title} — brain")
+        self.setMinimumSize(560, 480)
+        self.setSizeGripEnabled(True)
+        box = QVBoxLayout(self)
+        head = QLabel(f"[{kind}]  {title}")
+        head.setStyleSheet(f"color: {C.ACC2}; font-weight: bold;")
+        box.addWidget(head)
+        text = QPlainTextEdit()
+        text.setReadOnly(True)
+        text.setPlainText(body or "(page vide)")
+        box.addWidget(text, 1)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        close = QPushButton("Fermer")
+        close.clicked.connect(self.accept)
+        row.addWidget(close)
+        box.addLayout(row)
+
+
+class _RefMissing(QDialog):
+    """A reference that stopped resolving — honest, not silent."""
+
+    def __init__(self, title, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Référence introuvable")
+        box = QVBoxLayout(self)
+        box.addWidget(QLabel(f"« {title} » n'existe pas (ou plus) dans le vault.\n"
+                             "La page a pu être renommée, fusionnée ou supprimée."))
+        close = QPushButton("Fermer")
+        close.clicked.connect(self.accept)
+        box.addWidget(close)
+
+
+def _load_refs_bulk(titles):
+    """Resolve a WHOLE batch of references in ONE theology_brain load —
+    'open all' with forty refs costs one module load, not forty.
+    Returns [(title, kind, body_or_None), ...] in order; body None = missing."""
+    results = [(t, "", None) for t in titles]
+    try:
+        import importlib.util
+        path = Path(__file__).resolve().parent / "actions" / "theology_brain.py"
+        spec = importlib.util.spec_from_file_location("markliv_ui_refs_bulk", path)
+        tb = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tb)
+        wanted = {re.sub(r"\W+", " ", t.casefold()).strip(): i
+                  for i, t in enumerate(titles)}
+        for dirname, p in tb._iter_pages(tb._vault()):
+            meta, body = tb._read_page(p)
+            name = tb._page_title(p, meta) or p.stem
+            idx = wanted.get(re.sub(r"\W+", " ", name.casefold()).strip())
+            if idx is not None and results[idx][2] is None:
+                results[idx] = (titles[idx], dirname, body)
+    except Exception as e:
+        print(f"[Refs] bulk load failed: {e}")
+    return results
+
+
+class _RefsStacked(QDialog):
+    """« Tout ouvrir » : une seule fenêtre, visionneuse empilée — liste des
+    références à gauche, panneau de lecture à droite. Dimensionnée pour
+    avaler TOUTES les citations d'une réponse, vingt et plus sans hésiter."""
+
+    def __init__(self, titles, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Références du brain — {len(titles)} page(s)")
+        self.setMinimumSize(760, 540)
+        self.setSizeGripEnabled(True)
+        h = QHBoxLayout(self)
+        self._list = QListWidget()
+        self._list.setMaximumWidth(280)
+        h.addWidget(self._list, 0)
+        right = QVBoxLayout()
+        h.addLayout(right, 1)
+
+        # Recherche Ctrl+F : TOUTES les pages empilées, navigation + surlignage.
+        srow = QHBoxLayout()
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("Rechercher dans toutes les pages… (Ctrl+F, Entrée = suivant)")
+        self._search.textChanged.connect(self._apply_search)
+        self._search.returnPressed.connect(self._next_match)
+        srow.addWidget(self._search, 1)
+        prev_btn = QPushButton("‹")
+        prev_btn.setFixedWidth(30)
+        prev_btn.clicked.connect(self._prev_match)
+        srow.addWidget(prev_btn)
+        next_btn = QPushButton("›")
+        next_btn.setFixedWidth(30)
+        next_btn.clicked.connect(self._next_match)
+        srow.addWidget(next_btn)
+        self._match_info = QLabel("")
+        self._match_info.setStyleSheet(f"color: {C.TEXT_MED};")
+        srow.addWidget(self._match_info)
+        right.addLayout(srow)
+
+        self._pages: list[QPlainTextEdit] = []
+        self._items: list[QListWidgetItem] = []
+        self._base_items: list[str] = []
+        self._stack = QStackedWidget()
+        right.addWidget(self._stack, 1)
+        missing = 0
+        for title, kind, body in _load_refs_bulk(titles):
+            label = f"⚠ {title}" if body is None else f"[{kind}] {title}"
+            self._base_items.append(label)
+            self._items.append(self._list.addItem(label) or self._list.item(
+                self._list.count() - 1))
+            pane = QPlainTextEdit()
+            pane.setReadOnly(True)
+            pane.setPlainText(body if body is not None else
+                              "(page absente du vault — renommée ou supprimée)")
+            self._stack.addWidget(pane)
+            self._pages.append(pane)
+            missing += 1 if body is None else 0
+        if missing:
+            self.setWindowTitle(f"Références du brain — {len(titles)} page(s), "
+                                f"{missing} introuvable(s)")
+        self._list.currentRowChanged.connect(self._stack.setCurrentIndex)
+        self._list.setCurrentRow(0)
+
+        # Ctrl+F focus the search box wherever the focus sits in the viewer.
+        QShortcut(QKeySequence("Ctrl+F"), self,
+                  activated=lambda: (self._search.setFocus(),
+                                     self._search.selectAll()))
+        QShortcut(QKeySequence("Escape"), self._search,
+                  activated=self._search.clear)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        close = QPushButton("Fermer")
+        close.clicked.connect(self.accept)
+        row.addWidget(close)
+        right.addLayout(row)
+
+    # ── Search across every stacked page ────────────────────────────────
+    def _counts(self, query: str) -> list[int]:
+        """Occurrences par onglet, insensible à la casse. Local, instantané."""
+        out = []
+        for pane in self._pages:
+            doc, n, cursor = pane.document(), 0, None
+            while True:
+                cursor = doc.find(query, cursor or QTextCursor())
+                if cursor.isNull():
+                    break
+                n += 1
+            out.append(n)
+        return out
+
+    def _annotate(self, counts, query: str) -> None:
+        """Variante « correspondances par page » : le panneau gauche porte le
+        compte de chaque onglet pendant la recherche (pages touchées en
+        surbrillance, les autres grisées). Sans requête, retour aux libellés
+        d'origine — jamais de perte du titre de base."""
+        for i, item in enumerate(self._items):
+            base = self._base_items[i]
+            if not query:
+                item.setText(base)
+                item.setForeground(QBrush(QColor(C.TEXT)))
+                continue
+            n = counts[i] if counts else 0
+            if n:
+                item.setText(f"{base}  ({n})")
+                item.setForeground(QBrush(QColor(C.ACC2)))
+            else:
+                item.setText(base)
+                item.setForeground(QBrush(QColor(C.TEXT_DIM)))
+
+    def _apply_search(self) -> None:
+        query = self._search.text().strip()
+        if not query:
+            self._match_info.setText("")
+            self._highlight(0, [])
+            self._annotate(None, "")
+            # Pas de sélection résiduelle : la page redevient lisible net.
+            pane = self._pages[self._stack.currentIndex()]
+            cursor = pane.textCursor()
+            cursor.clearSelection()
+            pane.setTextCursor(cursor)
+            return
+        counts = self._counts(query)
+        total, hit_pages = sum(counts), [i for i, n in enumerate(counts) if n]
+        self._annotate(counts, query)
+        if not hit_pages:
+            self._match_info.setText("0 correspondance")
+            self._highlight(0, [])
+            return
+        self._nav_pages = hit_pages
+        self._highlight(hit_pages[0], query)
+        self._list.setCurrentRow(hit_pages[0])
+        self._select_first(hit_pages[0], query, 1)
+        self._match_info.setText(
+            f"{total} correspondance(s) dans {len(hit_pages)} page(s) — "
+            f"onglet {hit_pages[0] + 1}/{len(self._pages)}")
+
+    def _next_match(self) -> None:
+        self._step(1)
+
+    def _prev_match(self) -> None:
+        self._step(-1)
+
+    def _step(self, direction: int) -> None:
+        """Occurrence suivante (ou précédente, avec retour arrière), page
+        suivante quand la page courante est épuisée, retour en tête en bout
+        de course — jamais de blocage."""
+        query = self._search.text().strip()
+        if not query or not getattr(self, "_nav_pages", None):
+            return
+        flags = QTextDocument.FindFlag(0) if direction > 0 else \
+            QTextDocument.FindFlag.FindBackward
+        pane = self._pages[self._stack.currentIndex()]
+        if pane.document().find(query, pane.textCursor(), flags).isNull():
+            # Page courante épuisée → prochaine (ou précédente) page avec match.
+            cur = self._nav_pages.index(self._stack.currentIndex()) \
+                if self._stack.currentIndex() in self._nav_pages else -1
+            nxt = self._nav_pages[(cur + direction) % len(self._nav_pages)]
+            self._highlight(nxt, query)
+            self._list.setCurrentRow(nxt)
+            self._select_first(nxt, query, direction)
+            return
+        cursor = pane.document().find(query, pane.textCursor(), flags)
+        pane.setTextCursor(cursor)          # centre et surligne l'occurrence
+        self._highlight(self._stack.currentIndex(), query)
+        self._match_info.setText(
+            f"onglet {self._stack.currentIndex() + 1}/{len(self._pages)}")
+
+    def _select_first(self, page_i: int, query: str, direction: int) -> None:
+        pane = self._pages[page_i]
+        flags = QTextDocument.FindFlag(0) if direction > 0 else \
+            QTextDocument.FindFlag.FindBackward
+        cursor = pane.document().find(
+            query, QTextCursor(pane.document()) if direction > 0
+            else QTextCursor(pane.document().end()), flags)
+        if not cursor.isNull():
+            pane.setTextCursor(cursor)
+
+    def _highlight(self, page_i: int, query: str) -> None:
+        """Surlignage de TOUTES les occurrences de la page courante. Ne touche
+        JAMAIS au compteur — les appelants le gèrent (un highlight à requête
+        vide ne doit pas écraser « 0 correspondance »)."""
+        pane = self._pages[page_i]
+        selections = []
+        fmt = QTextCharFormat()
+        fmt.setBackground(QColor("#ffe08a"))
+        fmt.setForeground(QColor("#101010"))
+        if query:
+            doc, cursor = pane.document(), QTextCursor()
+            while True:
+                cursor = doc.find(query, cursor)
+                if cursor.isNull():
+                    break
+                sel = QTextEdit.ExtraSelection()
+                sel.format, sel.cursor = fmt, cursor
+                selections.append(sel)
+        pane.setExtraSelections(selections)

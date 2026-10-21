@@ -634,8 +634,30 @@ class JarvisLive:
             notify=lambda msg: self.ui.write_log(f"SYS: {msg}"),
         )
         self.ui.get_plugins = self._plugin_registry.list_for_ui
-        self.ui.get_plugin_settings = self._plugin_registry.settings_schemas  # ⚙ settings tab
-        self.ui.request_say = self.plugin_say   # plugins: mid-task speech channel
+        self.ui.get_plugin_settings = self._settings_schemas  # ⚙ settings tab
+        self.ui.request_say = self.plugin_say                 # plugins: mid-task speech channel
+
+        # The vault's table of contents, in the prompt. A model cannot look for
+        # what it does not know exists: without this line, the assistant has no
+        # reason to consult the vault before answering a theological question
+        # from memory — and a question answered from memory is a question the
+        # vault never learns. Cheap: the page index is read once, and the
+        # mirror is one small file.
+        self._brain = sys.modules.get("actions.theology_brain")
+        try:
+            if self._brain is not None and hasattr(self._brain, "refresh_context_mirror"):
+                self._brain.refresh_context_mirror()
+                # The vault is read once here, so the first question of the
+                # session does not pay for it in the middle of a voice turn.
+                self._brain.vault_router().warm()
+        except Exception as e:
+            print(f"[JARVIS] theology mirror unavailable: {e}")
+
+        # The vault is consulted BEFORE the model answers, not because the
+        # model was asked to: the application asks the vault itself and hands
+        # what it finds to the conversation. One flag per turn, so a question
+        # split over several transcription chunks is routed once.
+        self._vault_routed = False
 
         # ── Wake word ────────────────────────────────────────────────────────
         # _awake gates the mic (see _listen_audio) and the background speakers.
@@ -659,6 +681,103 @@ class JarvisLive:
         self.ui.on_wake_toggle   = self._ui_wake_toggle   # (enable: bool) -> str
         self.ui.on_wake_manual   = self._ui_wake_manual   # () -> toggle awake/asleep
         self.ui.on_wake_install  = self._ui_wake_install  # () -> (ok, msg)
+
+    def _settings_schemas(self) -> list[dict]:
+        """Every settings section, actions first, then plugins.
+
+        A knob an action owns (the theology vault's path, the ceiling on
+        automatic research) is shown in the same tab as a plugin's: a setting
+        the user cannot find is a setting the user cannot turn off. Sections
+        are deduped by namespace, so a suite that shares one namespace shows
+        one form."""
+        out, seen = [], set()
+        for section in (self._action_registry.settings_schemas()
+                        + self._plugin_registry.settings_schemas()):
+            ns = section.get("namespace")
+            if not ns or ns in seen:
+                continue
+            seen.add(ns)
+            out.append(section)
+        return out
+
+    # ── the vault, before the answer ────────────────────────────────────────
+    async def _route_vault(self, text: str) -> bool:
+        """Consult the vault before the model answers. True if something was
+        sent to the conversation.
+
+        The vault is not a tool the model has to remember to call. It is
+        consulted here, and what it holds is handed over: the pages, with
+        their text, so the answer comes from the user's own reading. A
+        theological question the vault does not hold starts a research run —
+        also here, also without asking the model.
+
+        Both the consultation and the measurement are local and cached: a few
+        milliseconds, once per turn, and nothing at all when the question is
+        not the vault's business."""
+        brain = self._brain
+        if brain is None:
+            return False
+        try:
+            router = brain.vault_router()
+            decision = router.route(text)
+        except Exception as e:
+            print(f"[JARVIS] vault route failed: {e}")
+            return False
+
+        kind = decision.get("kind")
+        if kind == "vault":
+            context = decision.get("context") or ""
+            if context:
+                await self._inject(context)
+                return True
+            return False
+        if kind == "gap":
+            note = await self._start_vault_research(text)
+            if note:
+                await self._inject(note)
+                return True
+        return False
+
+    async def _inject(self, text: str) -> None:
+        """Hand a message to the conversation, without ending the turn.
+
+        The message joins the turn the user is speaking, so the model has it
+        before it answers — which is the whole point of asking the vault
+        first."""
+        if not text or not self.session:
+            return
+        try:
+            await self.session.send_client_content(
+                turns={"role": "user", "parts": [{"text": text}]},
+                turn_complete=False)
+            self.ui.write_log(f"[VAULT] {text.splitlines()[0][:80]}")
+        except Exception as e:
+            print(f"[JARVIS] could not hand the vault to the conversation: {e}")
+
+    async def _start_vault_research(self, query: str) -> str:
+        """The vault has nothing on this question: start the research that
+        will fill it, and return what the conversation is told.
+
+        The research engine is a heavy import (requests, the search stack), so
+        it is done off the audio path: a voice turn must not wait for it."""
+        loop = asyncio.get_event_loop()
+        try:
+            return await loop.run_in_executor(
+                None, self._research_for_gap, query)
+        except Exception as e:
+            print(f"[JARVIS] vault research not started: {e}")
+            return ""
+
+    def _research_for_gap(self, query: str) -> str:
+        """Off the audio path: the research engine, imported on first need."""
+        try:
+            from research import theology as bridge
+            return bridge.start_and_report(query, player=self.ui,
+                                           speak=self.speak,
+                                           source="vault-router")
+        except Exception as e:
+            print(f"[JARVIS] vault research not started: {e}")
+            return ""
 
     # ── Wake word: state machine ─────────────────────────────────────────────
 
@@ -955,7 +1074,11 @@ class JarvisLive:
     def speak_error(self, tool_name: str, error: str):
         short = str(error)[:120]
         self.ui.write_log(f"ERR: {tool_name} — {short}")
-        self.speak(f"Sir, {tool_name} encountered an error. {short}")
+        # No address form and no English: this text is handed to the model,
+        # which then speaks to the user in their own language.
+        self.speak(f"[TOOL_ERROR] {tool_name} failed: {short}. Say what failed "
+                   f"in one short sentence, in the user's language, and offer the "
+                   f"undo tool if the failure changed something on their machine.")
 
     def _build_config(self) -> types.LiveConnectConfig:
         from datetime import datetime
@@ -1528,10 +1651,22 @@ class JarvisLive:
                             if txt:
                                 in_buf.append(txt)
                                 self._last_user_speech = time.monotonic()
+                                # The vault is asked while the user is still
+                                # talking, so what it holds is in the turn
+                                # before the answer is written. One route per
+                                # turn, and never on a message that closes the
+                                # turn: there would be no turn left to add it to.
+                                if not self._vault_routed and not sc.turn_complete:
+                                    if await self._route_vault(" ".join(in_buf)):
+                                        self._vault_routed = True
 
                         if sc.turn_complete:
                             if self._turn_done_event:
                                 self._turn_done_event.set()
+
+                            # A new turn may be routed to the vault again —
+                            # reset before anything can skip it.
+                            self._vault_routed = False
 
                             # If this turn_complete ends an interrupted response, clear the
                             # flag and skip all further processing for that turn.
@@ -1565,6 +1700,7 @@ class JarvisLive:
                             if full_out:
                                 self._last_out_logged = full_out
                                 self.ui.write_log(f"{self._asst_name}: {full_out}")
+                                self.ui.show_refs(full_out)
                                 self._session_log.append(f"{self._asst_name}: {full_out}")
                                 if self._dashboard:
                                     asyncio.create_task(self._dashboard.broadcast({
