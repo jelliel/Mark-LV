@@ -464,6 +464,21 @@ def _live_call(contents, config, timeout_ms: int, key: str):
     return _Reply(text) if text else None
 
 
+def first_model(tier: str = SMART) -> str:
+    """The first model on a tier's ladder that is not cooling.
+
+    The chat API needs a model name of its own — it cannot walk the ladder —
+    so a caller that wants to try the chat route first asks which model to
+    open it with. Returns "" when the whole tier is cooling."""
+    ladder = _LADDERS.get(tier) or ()
+    for model in ladder:
+        if model == LIVE:
+            continue                      # a Live turn is not a chat model
+        if not _cooling(model):
+            return model
+    return ""
+
+
 def call(contents, tier: str = FAST, config=None,
          timeout_ms: int = DEFAULT_TIMEOUT_MS, key: str = ""):
     """Run one generation, walking the ladder until one answers.

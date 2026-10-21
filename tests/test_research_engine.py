@@ -862,5 +862,57 @@ class VaultRouterTests(unittest.TestCase):
             self.assertEqual(measured["subject"], covered.subject, query)
 
 
+class WiringTests(unittest.TestCase):
+    """What must be true of the app for any of this to run at all.
+
+    An action whose import fails is not an error the user sees: the loader
+    logs it and moves on, and the tool simply is not there. So the discovery
+    is checked as a whole, and the one action that was silently missing —
+    code_helper, whose import pointed at a file that is not in actions/ —
+    is pinned here."""
+
+    def test_every_action_loads(self):
+        from core.action_loader import discover_actions
+        rejected = []
+
+        def logger(message):
+            if message.startswith("Action rejected"):
+                rejected.append(message)
+
+        registry = discover_actions(ROOT / "actions", logger=logger)
+        self.assertEqual(rejected, [], "\n".join(rejected))
+        self.assertIn("code_helper", registry.names())
+        self.assertIn("theology_brain", registry.names())
+        self.assertIn("file_processor", registry.names())
+
+    def test_the_afc_wrapper_answers_with_a_response_object(self):
+        """Every caller reads `response.text`. A wrapper that returned a
+        plain string would break all of them at the first call."""
+        import importlib.util
+        path = ROOT / "gemini_afc_fix.py"
+        spec = importlib.util.spec_from_file_location("markliv_afc_test", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        class _Response:
+            text = "a reply"
+
+        class _Chat:
+            def send_message(self, message=None, config=None):
+                return _Response()
+
+        class _Chats:
+            def create(self, model=None, config=None, history=None):
+                self.model = model
+                return _Chat()
+
+        class _Client:
+            chats = _Chats()
+
+        answer = module.safe_generate_content(_Client(), "a prompt", tier="smart")
+        self.assertIsNotNone(answer)
+        self.assertEqual(answer.text, "a reply")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

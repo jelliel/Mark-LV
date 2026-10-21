@@ -1,25 +1,28 @@
 """
-Utility functions for Gemini API calls with AFC deprecation fix.
+Gemini calls that do not trip the automatic-function-calling deprecation.
 
-Provides backward-compatible wrapper that uses Chat.send_message (recommended)
-with fallback to generate_content (deprecated but still works).
+`client.chats.create(model=…).send_message(…)` is the route the SDK now
+recommends; `client.models.generate_content(…)` still answers, but it is the
+one on its way out. The wrapper tries the chat route first and falls back to
+the ladder in `core/gemini.py` — the ladder is the app's resilience, so it is
+what answers when the chat route cannot.
+
+**IT RETURNS THE RESPONSE OBJECT, NOT THE TEXT.** The SDK's response carries
+`.text`, `.candidates` and the grounding metadata, and every caller in this
+codebase expects that object — a wrapper that returned a plain string would
+turn `response.text` into an AttributeError at the first call. The text is
+one attribute away, and the object is the thing worth keeping.
+
+The module lives at the application root rather than in `actions/`, because
+`actions/` is not a package: it is loaded by path, so a relative import from
+one of its files cannot resolve. The one file that uses it loads it by path
+too, and falls back to the plain call when it is absent.
 """
 
 import logging
-from typing import Optional, Any, Callable, Union
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
-
-
-def _create_session_if_needed(client) -> str:
-    """Create or return a session ID for Chat API usage.
-
-    In a real implementation, you'd maintain session state. For now,
-    we use a simple approach.
-    """
-    # Session management would be handled by the caller or framework
-    # This is a placeholder for the Chat.send_message pattern
-    return "session_current"
 
 
 def call_with_afc_fallback(
@@ -29,91 +32,51 @@ def call_with_afc_fallback(
     timeout_ms: int = 60000,
     use_chat_api: bool = True,
 ) -> Optional[Any]:
-    """Call Gemini with Automatic Function Calling using recommended approach.
-
-    Recommended: use Chat.send_message to avoid AFC deprecation warning.
-    Falls back to generate_content if chat API is unavailable.
+    """Call Gemini, preferring the chat route. Returns the response object.
 
     Args:
         client: Configured genai.Client
         prompt: The prompt/contents to send
         tier: Reasoning tier (fast/smart)
         timeout_ms: Timeout in milliseconds
-        use_chat_api: Whether to try Chat.send_message first
+        use_chat_api: Whether to try the chat route first
 
     Returns:
-        Response text or None
+        The SDK's response object (it has `.text`), or None when no route
+        answered.
     """
     from core import gemini as gemini_core
 
-    if use_chat_api:
-        try:
-            # Recommended approach: Chat.send_message
-            session_id = _create_session_if_needed(client)
-            response = client.chats.send_message(
-                session_id=session_id,
-                message=prompt,
-            )
-            # Extract text from response
-            if hasattr(response, 'text'):
-                return response.text
-            elif hasattr(response, 'get("text")):
-                return response.get("text")
-            # Try to convert to string if it's an object
-            return str(response)
-        except Exception as e:
-            logger.warning(f"Chat.send_message failed: {e}, falling back to generate_content")
-            # Fall through to deprecated approach
+    if use_chat_api and client is not None:
+        # The chat route needs a model of its own — it cannot walk the
+        # ladder — so it is opened with the first model of the tier that is
+        # not cooling. Anything that is not the SDK's chat API is simply not
+        # there, and then the ladder answers.
+        model = gemini_core.first_model(tier if tier in ("fast", "smart")
+                                        else gemini_core.SMART)
+        if model:
+            try:
+                chat = client.chats.create(model=model)
+                return chat.send_message(message=prompt)
+            except Exception as e:
+                logger.info("chat route unavailable on %s (%s) — using the ladder",
+                            model, type(e).__name__)
 
-    # Deprecated but still working approach: generate_content
+    # The ladder: the model fallback, the timeout, the quota cooldowns.
     try:
         tier_enum = gemini_core.FAST if tier == "fast" else gemini_core.SMART
-        resp = gemini_core.call(
-            contents=prompt,
-            tier=tier_enum,
-            timeout_ms=timeout_ms,
-        )
-        if resp is None:
-            return None
-        if hasattr(resp, 'text'):
-            return resp.text
-        return str(resp) if resp else None
+        return gemini_core.call(contents=prompt, tier=tier_enum,
+                                timeout_ms=timeout_ms)
     except Exception as e:
-        logger.error(f"generate_content also failed: {e}")
+        logger.error("every Gemini route failed: %s", e)
         return None
 
 
-# Convenience wrapper for code_helper usage
-def safe_generate_content(client, prompt: str, tier: str = "smart") -> Optional[str]:
-    """Safe Gemini content generation with AFC deprecation protection.
+def safe_generate_content(client, prompt: str, tier: str = "smart") -> Optional[Any]:
+    """One generation, the way the rest of the app expects it back.
 
-    Uses the recommended Chat.send_message approach, with fallback.
+    Returns the SDK's response object, so `response.text` works — which is how
+    every caller in `actions/code_helper.py` reads it.
     """
-    return call_with_afc_fallback(client, prompt, tier=tier, use_chat_api=True)
-
-
-# Example usage pattern for code_helper.py
-"""
-# Instead of:
-#   resp = gemini.call(contents, tier=tier, timeout_ms=60000)
-#   return resp.text
-
-# Use:
-#   from gemini_afc_fix import safe_generate_content
-#   resp = safe_generate_content(client, prompt, tier="smart")
-#   if resp is None:
-#       raise RuntimeError("every Gemini model on the ladder failed")
-#   return resp
-"""
-
-# For dev_agent.py and file_processor.py, use the same pattern:
-"""
-# Replace:
-#   response = model.generate_content(prompt)
-# With:
-#   from gemini_afc_fix import safe_generate_content
-#   response = safe_generate_content(client, prompt, tier="smart")
-#   if response is None:
-#       raise RuntimeError("every Gemini model on the ladder failed")
-#   return response.text
-"""
+    return call_with_afc_fallback(client, prompt, tier=tier,
+                                  use_chat_api=True)
