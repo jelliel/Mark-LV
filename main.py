@@ -680,6 +680,11 @@ class JarvisLive:
         if get_push_to_talk_enabled():
             try:
                 self.set_push_to_talk(True)
+                # The microphone is CLOSED until the chord is held. Saying so on
+                # the HUD is the difference between "the mic is broken" and
+                # "hold the key" — the stream is open either way, and an open
+                # stream that hears nothing looks exactly like a dead one.
+                self.ui.set_state(self._ptt_state() or "SLEEPING")
             except Exception as e:
                 print(f"[JARVIS] ⚠ Push-to-talk unavailable: {e}")
         # UI control surface for the Wake Word settings section.
@@ -868,7 +873,7 @@ class JarvisLive:
         self._awake = True
         self._last_user_speech = time.monotonic()   # start the auto-sleep clock now
         if not self.ui.muted:
-            self.ui.set_state("LISTENING")
+            self.ui.set_state(self._listening_state())
         self.ui.write_log(f"SYS: Awake — {reason}.")
 
     def sleep(self, reason: str = "timeout") -> None:
@@ -1054,7 +1059,7 @@ class JarvisLive:
         if value:
             self.ui.set_state("SPEAKING")
         elif not self.ui.muted:
-            self.ui.set_state("LISTENING")
+            self.ui.set_state(self._listening_state())
 
     def set_push_to_talk(self, enabled: bool) -> str:
         """Turn hold-to-talk on or off. Returns the scope actually achieved."""
@@ -1066,22 +1071,44 @@ class JarvisLive:
             if self._ptt is not None:
                 self._ptt.stop()
                 self._ptt = None
+            self._ptt_label = ""
             return "off"
 
         if self._ptt is None:
             self._ptt = PushToTalk(self._on_ptt)
         scope = self._ptt.start()
+        self._ptt_label = self._ptt.label
         # A window-scoped chord is a real limitation, not a detail — say it once
         # in the log so nobody wonders why it does nothing while another app is
         # focused. Reporting it must never be able to undo the thing it reports.
+        _scope_note = ("" if scope == "global"
+                       else " (works while this window is focused)")
+        message = (f"Push-to-talk on — hold {self._ptt_label}"
+                   f"{_scope_note}. The microphone stays closed until you do.")
+        # The console too: the activity log is a panel nobody is reading at
+        # start-up, and a closed microphone that LOOKS open is the worst kind
+        # of broken.
+        print(f"[JARVIS] 🎤 {message}")
         try:
-            self.ui.write_log(
-                f"SYS: Push-to-talk on — hold {self._ptt.label}"
-                + ("." if scope == "global"
-                   else " (works while this window is focused)."))
+            self.ui.write_log(f"SYS: {message}")
         except Exception:
             pass
         return scope
+
+    def _ptt_state(self) -> str:
+        """What the HUD should say while the microphone is closed by the chord.
+
+        "SLEEPING" is the wake word's word. A microphone that is closed
+        because a key is not held is a different thing entirely, and saying
+        so is the difference between a mystery and an answer."""
+        if not self._ptt_enabled or self._ptt_held:
+            return ""
+        return f"HOLD {self._ptt_label}" if self._ptt_label else "HOLD TO TALK"
+
+    def _listening_state(self) -> str:
+        """The state to show when the microphone is open — unless the chord
+        says otherwise, in which case the chord wins: the mic is NOT open."""
+        return self._ptt_state() or "LISTENING"
 
     def _on_ptt(self, held: bool) -> None:
         """Chord pressed or released — may arrive on the hotkey thread."""
@@ -1093,7 +1120,8 @@ class JarvisLive:
                 self._awake = True
                 self._last_user_speech = time.monotonic()
         try:
-            self.ui.set_state("LISTENING" if held else "SLEEPING")
+            self.ui.set_state("LISTENING" if held else (self._ptt_state()
+                                                       or "SLEEPING"))
         except Exception:
             pass
 
@@ -1321,7 +1349,7 @@ class JarvisLive:
                 update_memory({category: {key: {"value": value}}})
                 print(f"[Memory] 💾 save_memory: {category}/{key} = {value}")
             if not self.ui.muted:
-                self.ui.set_state("LISTENING")
+                self.ui.set_state(self._listening_state())
             return types.FunctionResponse(
                 id=fc.id, name=name,
                 response={"result": "ok", "silent": True}
@@ -1454,7 +1482,7 @@ class JarvisLive:
             self.speak_error(name, e)
 
         if not self.ui.muted:
-            self.ui.set_state("LISTENING")
+            self.ui.set_state(self._listening_state())
 
         print(f"[JARVIS] 📤 {name} → {str(result)[:80]}")
 
@@ -1823,6 +1851,11 @@ class JarvisLive:
             print(f"[JARVIS] ⚠️  Output device '{_spk_name}' failed: {_e} — using default")
             self.ui.write_log(f"SYS: Speaker '{_spk_name}' unavailable — using system default.")
             stream = _open_spk(None)
+
+        # Set this process's audio session volume to 100% now that the stream
+        # has created the session. The Windows volume mixer sometimes starts
+        # new apps at 1%.
+        audio_devices.ensure_app_volume()
 
         # Ask the device how far behind the speakers actually are, rather than
         # assuming. This is what the echo tail is sized from, so a machine with a
@@ -2342,7 +2375,7 @@ class JarvisLive:
                         self.ui.write_log("SYS: JARVIS online — sleeping. Say 'Hey Jarvis' to wake me.")
                     else:
                         self._awake = True
-                        self.ui.set_state("LISTENING")
+                        self.ui.set_state(self._listening_state())
                         self.ui.write_log("SYS: JARVIS online.")
 
                     if self._dashboard:

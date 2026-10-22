@@ -332,6 +332,55 @@ def prefetch() -> None:
     threading.Thread(target=_work, daemon=True, name="audio-devices").start()
 
 
+def ensure_app_volume(target: int = 100) -> bool:
+    """Make sure JARVIS's own audio session is audible.
+
+    Windows gives every process its own fader in the volume mixer, and that
+    fader is independent of the master. The screenshot showed JARVIS — MARK LV
+    at 1%: the mic worked, the session connected, the transcript came back —
+    but nothing was ever heard. This opens a short silent stream so the audio
+    engine creates a session for this process, then raises that session's
+    fader to `target`. Never touches the master volume or any other app.
+
+    Returns True when a change was made, False otherwise. Never raises.
+    """
+    try:
+        import sounddevice as sd
+        from pycaw.pycaw import AudioUtilities
+        import os
+
+        # Open a 0.3 s silent stream so the audio engine registers a session
+        # for this process. Without this step GetAllSessions() only returns
+        # the system-level session (PID 0).
+        st = sd.RawOutputStream(samplerate=24000, channels=1, dtype="int16",
+                                blocksize=1024)
+        st.start()
+        st.write(bytes(int(24000 * 0.3) * 2))
+        st.stop()
+        st.close()
+
+        changed = False
+        for session in AudioUtilities.GetAllSessions():
+            if session.ProcessId != os.getpid():
+                continue
+            try:
+                # SimpleAudioVolume is the pycaw-backed ISimpleAudioVolume
+                # pointer — use it directly, no ctypes casting needed.
+                current = session.SimpleAudioVolume.GetMasterVolume()
+                if current < target / 100.0:
+                    session.SimpleAudioVolume.SetMasterVolume(
+                        target / 100.0, None)
+                    print(f"[Audio] App session volume "
+                          f"{current * 100:.0f}% → {target}%")
+                    changed = True
+            except Exception:
+                continue
+        return changed
+    except Exception as e:
+        print(f"[Audio] ensure_app_volume skipped: {e}")
+        return False
+
+
 def list_devices(kind: str, refresh: bool = False) -> list[str]:
     """Device names for 'input' or 'output'. Falls back to a synchronous query
     if the prefetch has not landed yet — correctness over the cache."""
