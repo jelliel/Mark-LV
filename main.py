@@ -78,6 +78,7 @@ from memory.config_manager     import (
     get_wake_word_enabled, save_wake_word_enabled,    get_input_device, get_output_device,
     get_llm_provider,
 )
+from core import outcome
 from core                     import gemini as _gemini
 from core                     import llm as _llm
 from core.plugin_loader        import discover_plugins
@@ -269,6 +270,19 @@ def _describe_limits(has_vision: bool, has_mic: bool) -> str:
         "- You remember what is in the memory block and what has been said this "
         "session. Anything else you were told before is gone unless it was saved.",
     ]
+    # What the PLATFORM forbids, before what the build lacks.
+    #
+    # On Wayland, and on a macOS without Accessibility, the keyboard, mouse and
+    # screen are simply not available to any program — and the APIs report
+    # success anyway. A model that does not know this reports clicks that never
+    # happened, which is how "it does not work properly on Linux" was described
+    # for a long time without anybody being able to name the failing part.
+    try:
+        from core import platform_support
+        out.extend(platform_support.describe_for_model(platform_support.detect()))
+    except Exception as _e:
+        print(f"[Limits] platform capabilities unavailable: {_e}")
+
     if has_vision:
         out.append(
             "- Your sight is not continuous. You see nothing until you call a "
@@ -562,6 +576,7 @@ class JarvisLive:
         # loop as words arrive, drained by the playback loop against the audio.
         self._visemes              = VisemeStream()
         self._last_out_logged      = ""      # de-dupes a re-sent transcript tail
+        self._platform_notes_shown = False
         # Push-to-talk
         self._ptt_enabled          = False
         self._ptt_held             = False
@@ -1579,10 +1594,13 @@ class JarvisLive:
                 if (name == "web_search" and r
                         and not r.startswith("No results")
                         and not r.startswith("Search failed")):
+                    # unwrap: the untrusted markers are for the MODEL. Showing
+                    # them to the person who asked for the search is the
+                    # machinery leaking into the interface.
                     _mode  = args.get("mode", "search")
                     _query = args.get("query") or ", ".join(args.get("items", []))
                     _label = f"{_mode.upper()} — {_query[:38]}" if _query else _mode.upper()
-                    self.ui.show_content(_label, r)
+                    self.ui.show_content(_label, outcome.unwrap(r))
 
             else:
                 if self._plugin_registry.has(name):
@@ -2496,6 +2514,16 @@ class JarvisLive:
                         self._awake = True
                         self.ui.set_state(self._listening_state())
                         self.ui.write_log("SYS: JARVIS online.")
+
+                    if not self._platform_notes_shown:
+                        self._platform_notes_shown = True
+                        try:
+                            from core import platform_support
+                            for _line in platform_support.describe_for_user(
+                                    platform_support.detect()):
+                                self.ui.write_log(_line)
+                        except Exception as _e:
+                            print(f"[Platform] capability notes unavailable: {_e}")
 
                     if self._dashboard:
                         await self._dashboard.broadcast({"type": "status", "state": "active"})
