@@ -1,8 +1,8 @@
 """
 MARK-LIV action — brain panel (état du second cerveau).
 
-Ouvre l'interface HTML sci-fi Theologicus dans le navigateur par défaut,
-et fournit les données du vault en temps réel via localStorage.
+Ouvre le panneau Theologicus dans l'application (pas de navigateur),
+et affiche les données du vault en temps réel.
 
 Demande naturelle : « état du second cerveau », « que sait le brain ? »,
 « montre-moi le vault ».
@@ -10,11 +10,9 @@ Demande naturelle : « état du second cerveau », « que sait le brain ? »,
 
 import importlib.util
 import json
-import webbrowser
 from pathlib import Path
 
 _BASE_DIR = Path(__file__).resolve().parent.parent
-_HTML_PATH = _BASE_DIR / "dashboard" / "static" / "theologicus.html"
 
 
 def _modules():
@@ -56,7 +54,7 @@ def _collect(agents, bridge, profiles) -> dict:
 
 
 def brain_panel(parameters: dict, player=None) -> str:
-    """Ouvre l'interface HTML Theologicus avec les données du vault intégrées."""
+    """Ouvre le panneau Theologicus dans l'application."""
     agents, bridge = _modules()
     if agents is None or bridge is None:
         return "Modules théologie introuvables — panneau impossible."
@@ -67,47 +65,17 @@ def brain_panel(parameters: dict, player=None) -> str:
 
     data = _collect(agents, bridge, agents.discover_agents())
 
-    # Lire le template HTML
-    if not _HTML_PATH.exists():
-        return "Interface HTML Theologicus introuvable."
-
-    html_template = _HTML_PATH.read_text(encoding="utf-8")
-
-    # Inject VAULT_DATA into the template (template has const VAULT_DATA = null;)
-    vault_js = f"""
-        const VAULT_DATA = {json.dumps(data, indent=2, ensure_ascii=False)};
-        function loadVaultData() {{
-            renderVaultData(VAULT_DATA);
-            addLog('sys', 'Vault chargé: ' + VAULT_DATA.total + ' page(s), ' + VAULT_DATA.n_raw + ' raw');
-        }}
-        loadVaultData();
-    """
-
-    html_content = html_template.replace(
-        'const VAULT_DATA = null;',
-        vault_js
-    )
-
-    # Écrire le HTML généré
-    generated_html = _BASE_DIR / "dashboard" / "static" / "theologicus_generated.html"
-    try:
-        generated_html.write_text(html_content, encoding="utf-8")
-    except Exception as e:
-        print(f"[BrainPanel] impossible d'écrire le HTML: {e}")
-        return "Erreur lors de la génération de l'interface."
-
-    # Ouvrir l'interface dans le navigateur
-    webbrowser.open(generated_html.as_uri())
-
-    if player:
+    # Ouvrir le panneau dans l'application (pas de navigateur)
+    if player is not None:
         try:
-            player.write_log("[BrainPanel] interface Theologicus ouverte")
-        except Exception:
-            pass
+            player.show_brain_panel(data)
+        except Exception as e:
+            print(f"[BrainPanel] in-app panel failed: {e}")
+            return "Erreur lors de l'ouverture du panneau Theologicus."
 
     return (f"Second cerveau : {data['total']} page(s), {data['n_raw']} raw source(s), "
             f"{len(data['profiles'])} agent(s), "
-            f"dérive : {len(data['findings'])}. Interface Theologicus ouverte.")
+            f"dérive : {len(data['findings'])}. Panneau Theologicus ouvert.")
 
 
 TOOL = {
