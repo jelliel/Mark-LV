@@ -198,40 +198,78 @@ def _messages_to_prompt(messages: list[dict]) -> str:
 
 
 class MistralProvider(LLMProvider):
-    """Mistral chat-completions over stdlib urllib."""
+    """Mistral chat-completions over stdlib urllib with auto-ladder fallback."""
 
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key or _api_key("mistral")
 
-    def generate(self, messages: list[dict], model: str = "mistral-small-latest",
-                 temperature: float = 0.7) -> str:
+    def generate(self, messages: list[dict], model: str = "",
+                 temperature: float = 0.7, tier: str = "") -> str:
         if not self.api_key:
             raise RuntimeError(
                 "no Mistral API key is configured in config/api_keys.json "
                 '(add "mistral_api_key")'
             )
-        body = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "stream": False,
-        }
-        return self._post(body, stream=False)
+        # Resolve model ladder based on tier parameter
+        if model:
+            models_to_try = [model]
+        else:
+            t = str(tier).lower() if tier else "smart"
+            models_to_try = [m for m in _tier(t) if not _cooling(m)]
+            if not models_to_try:
+                models_to_try = list(_tier(t))  # force try all if all cooling
 
-    def stream(self, messages: list[dict], model: str = "mistral-small-latest",
-               temperature: float = 0.7) -> Iterator[str]:
+        last_error = ""
+        for try_model in models_to_try:
+            body = {
+                "model": try_model,
+                "messages": messages,
+                "temperature": temperature,
+                "stream": False,
+            }
+            try:
+                result = self._post(body, stream=False)
+                _log(f"mistral:{try_model}", True)
+                return result
+            except Exception as e:
+                last_error = str(e)[:200]
+                _record_mistral_failure(try_model, e)
+                _log(f"mistral:{try_model}", False, last_error[:60])
+        raise RuntimeError(f"Mistral all models failed: {last_error}")
+
+    def stream(self, messages: list[dict], model: str = "",
+               temperature: float = 0.7, tier: str = "") -> Iterator[str]:
         if not self.api_key:
             raise RuntimeError(
                 "no Mistral API key is configured in config/api_keys.json "
                 '(add "mistral_api_key")'
             )
-        body = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "stream": True,
-        }
-        yield from self._post(body, stream=True)
+        if model:
+            models_to_try = [model]
+        else:
+            t = str(tier).lower() if tier else "smart"
+            models_to_try = [m for m in _tier(t) if not _cooling(m)]
+            if not models_to_try:
+                models_to_try = list(_tier(t))
+
+        last_error = ""
+        for try_model in models_to_try:
+            body = {
+                "model": try_model,
+                "messages": messages,
+                "temperature": temperature,
+                "stream": True,
+            }
+            try:
+                chunks = list(self._post(body, stream=True))
+                _log(f"mistral:{try_model}", True, f"{len(chunks)} chunks")
+                yield from chunks
+                return
+            except Exception as e:
+                last_error = str(e)[:200]
+                _record_mistral_failure(try_model, e)
+                _log(f"mistral:{try_model}", False, last_error[:60])
+        raise RuntimeError(f"Mistral all models failed: {last_error}")
 
     # ── network ──────────────────────────────────────────────────────────
 
