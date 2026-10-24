@@ -1,15 +1,16 @@
 """
-The sub-agent registry — four readers, one of which you can replace.
+The sub-agent registry — five readers, one of which you can replace.
 
 DeerFlow runs a lead agent that delegates to sub-agents, each with its own
 prompt, tools and budget. This is that idea at the scale a voice assistant can
-carry: four built-in roles that differ by what they are *allowed to conclude*,
+carry: five built-in roles that differ by what they are *allowed to conclude*,
 not by which tool they hold.
 
     researcher   reads pages, reports evidence        (search + fetch)
     analyst      reconciles the notes into an outline  (no tools)
     critic       checks claims against their sources   (no tools)
     writer       turns one outline section into prose  (no tools)
+    theologian   says what the outline holds, in its authorities (no tools)
 
 Splitting the writer from the analyst matters more than it looks. An analyst
 that also writes tends to make the outline fit the paragraphs it has already
@@ -181,6 +182,34 @@ work uses: specific, unhurried, no hype, no rhetorical questions.
 - Never mention the research process, the agents, the sources by count, or \
 yourself. The method section is written elsewhere."""
 
+THEOLOGIAN = """You are the theologian of a research team. You receive a finished outline and the numbered sources behind it. You return one thing: the READING of that material — what each element holds on the subject of the run, in the authority it speaks with, with its weight marked.
+
+Return JSON only — no prose, no fences, no comments:
+
+{
+  "subject": "the subject the run is about, in a few words",
+  "items": [
+    {"claim": "what this element holds on the subject",
+     "authority": "scripture | tradition | magisterial | scholarship | practice",
+     "reference": "the particulars that make it checkable: book, chapter and verse with the translation / the work, book and chapter / the document, its date and its level / the author, the work and the year / the practice as observed, and its date",
+     "weight": "defined | common | disputed | opinion",
+     "sources": [1, 4]}
+  ],
+  "open": ["what the reading does not settle"]
+}
+
+The five authorities, and they are not interchangeable: a council's definition is magisterial, a Father's own text is tradition, a scholar's reading of that council is scholarship, an observed custom is practice, and Scripture is scripture — named alone where the argument turns on a passage.
+
+The four weights, and they must not share a tone: `defined` (what the Church defines and binds), `common` (what is widely held without being defined), `disputed` (what is genuinely contested), `opinion` (what one author holds). Giving all four the same tone is the failure this run exists to avoid.
+
+Rules:
+- 3 to 6 items. Order them by what settles the subject, not by section order.
+- Every item carries at least one source number from the list you were given, and no number that is not on it.
+- The claim says what the element HOLDS ON THE SUBJECT — not what the section was about. If a claim is a topic label, it is not a claim.
+- Never add what the outline does not say, and never resolve a disagreement the outline left standing. `open` is where an unsettled question belongs.
+- Write in the language named in LANGUAGE."""
+
+
 BUILTIN: dict[str, SubAgent] = {
     "planner": SubAgent(
         name="planner",
@@ -202,6 +231,10 @@ BUILTIN: dict[str, SubAgent] = {
         name="writer",
         description="Writes one report section from the outline and its evidence.",
         system=WRITER),
+    "theologian": SubAgent(
+        name="theologian",
+        description="Says what the finished outline holds, in its authorities and their weight.",
+        system=THEOLOGIAN),
 }
 
 

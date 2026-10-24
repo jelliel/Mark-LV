@@ -53,6 +53,7 @@ from memory.memory_manager import (
     load_memory, update_memory, format_memory_for_prompt,
     save_session_summary, pop_last_session,
     search_memory, set_trim_notifier,
+    get_last_theological_query, get_theological_patterns, save_theological_metadata,
 )
 
 # The file-backed tools (open_app, web_search, browser_control, …) are no longer
@@ -737,16 +738,69 @@ class JarvisLive:
             return False
 
         kind = decision.get("kind")
+        measured = decision.get("measured", {})
+
+        # ── Layer 2: Pattern-augmented retrieval from cross-session memory ────
+        # Check stored theological patterns and prior queries for continuity
+        last_query = get_last_theological_query()
+        patterns = get_theological_patterns()
+        continuity_hooks = []
+        if last_query and patterns:
+            last_doctrine = measured.get("doctrine", "")
+            # If current query matches a stored pattern, inject prior context
+            for pattern_key, pattern_val in patterns.items():
+                if pattern_key in text.lower() or last_doctrine == pattern_key:
+                    continuity_hooks.append(f"prior_session:{pattern_key}->{pattern_val}")
+            # Also inject last query's doctrine as context anchor
+            if last_query:
+                continuity_hooks.append(f"last_query:{last_query[:200]}")
+
         if kind == "vault":
             context = decision.get("context") or ""
             if context:
+                # Extract theological metadata for enhanced context
+                doctrine = measured.get("doctrine", "")
+                authority = measured.get("authority", "")
+                category = measured.get("theological_category", "")
+                concepts = measured.get("related_concepts", [])
+                # Build enhanced context line if metadata available
+                meta_parts = []
+                if doctrine:
+                    meta_parts.append(f"doctrine:{doctrine}")
+                if authority:
+                    meta_parts.append(f"authority:{authority}")
+                if category:
+                    meta_parts.append(f"category:{category}")
+                if concepts:
+                    meta_parts.append(f"concepts:{','.join(concepts[:3])}")
+                if meta_parts:
+                    context = context + " [" + " | ".join(meta_parts) + "]"
+                # Layer 2: prepend continuity hooks if available
+                if continuity_hooks:
+                    context = " [" + " | ".join(continuity_hooks) + "] " + context
                 await self._inject(context)
+                # Layer 4: save theological metadata for next session
+                save_theological_metadata(measured)
                 return True
             return False
         if kind == "gap":
-            note = await self._start_vault_research(text)
+            # Run research synchronously before the model answers, so the model
+            # always has complete (vault + web) knowledge before it speaks — no gap.
+            # Enhance the query with detected theological metadata if available
+            enhanced_query = text
+            doctrine = measured.get("doctrine", "")
+            if doctrine:
+                enhanced_query = f"{text} [theological doCTYPE: {doctrine}]"
+            # Layer 2: augment with prior patterns
+            if patterns:
+                for pkey, pval in patterns.items():
+                    if pkey in text.lower():
+                        enhanced_query = f"{enhanced_query} [pattern:{pkey}:{pval}]"
+            note = await self._start_vault_research_sync(enhanced_query)
             if note:
                 await self._inject(note)
+                # Also save metadata from gap research
+                save_theological_metadata(measured)
                 return True
         return False
 

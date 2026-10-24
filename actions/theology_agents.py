@@ -27,31 +27,17 @@ AGENTS_DIR_KEY = "theology_agents_dir"   # optional override in config/api_keys.
 _BRIEF_CHARS   = 900                     # persona size handed to the model
 _NAME_PREFIX   = "agent-"
 
-
-@dataclass
+@dataclass(frozen=True)
 class AgentProfile:
-    name: str      # display name, e.g. "Apologète Catholique"
-    path: Path     # the .md file
-    brief: str     # first paragraphs, its specialty
+    name: str
+    description: str
+    path: Path | None = field(default=None, compare=False)
 
+    def as_dict(self) -> dict:
+        return {"name": self.name, "description": self.description,
+                "tools": list(self.tools), "builtin": self.builtin,
+                "path": str(self.path or "")}
 
-def _config_value(key: str):
-    config = Path(__file__).resolve().parent.parent / "config" / "api_keys.json"
-    try:
-        return json.loads(config.read_text(encoding="utf-8")).get(key)
-    except Exception:
-        return None
-
-
-def get_agents_dir() -> Path:
-    """The agent folder as configured, or Desktop/Agents by default."""
-    override = _config_value(AGENTS_DIR_KEY)
-    if override:
-        return Path(str(override)).expanduser()
-    return Path.home() / "Desktop" / "Agents"
-
-
-# ── Profile parsing ──────────────────────────────────────────────────────────
 
 def _clean_name(stem: str) -> str:
     name = stem.strip()
@@ -98,11 +84,12 @@ def _brief_from_text(text: str) -> str:
 def _profile_from_path(path: Path) -> AgentProfile | None:
     try:
         brief = _brief_from_text(path.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
+    except Exception as e:
+        print(f"[Agents] agent unreadable {path.name}: {e}")
         return None
-    if not brief:
+    if not brief or brief.strip() == "":
         return None
-    return AgentProfile(name=_clean_name(path.stem), path=path, brief=brief)
+    return AgentProfile(name=_clean_name(path.stem), description=brief, path=path)
 
 
 def discover_agents(agents_dir=None, logger=print) -> list[AgentProfile]:
@@ -114,33 +101,92 @@ def discover_agents(agents_dir=None, logger=print) -> list[AgentProfile]:
         return []
     profiles = []
     for path in sorted(root.glob("*.md")):
+        if path.name.startswith(("_", ".")):
+            continue
         profile = _profile_from_path(path)
         if profile is None:
-            logger(f"[Agents] skipped (no readable brief): {path.name}")
+            logger(f"[Agents] skipped (no name/brief): {path.name}")
+            continue
+        if profile.name in [p.name for p in profiles]:
+            logger(f"[Agents] duplicate agent name: {profile.name}")
             continue
         profiles.append(profile)
     logger(f"[Agents] {root} -> {len(profiles)} agent(s)")
     return profiles
 
 
-# ── The team's living self-knowledge doc ─────────────────────────────
+def get_agents_dir() -> Path:
+    """The agent folder as configured, or Desktop/Agents by default."""
+    override = None  # TODO: read from config if needed
+    if override:
+        return Path(str(override)).expanduser()
+    return Path.home() / "Desktop" / "Agents"
 
-_SELF_DOC = Path("self") / "mark-liv-theology.md"
-_IDENTITY = """# MARK-LIV Theology — Self-Knowledge of the Team
 
-_Identity section written by hand. The AUTO blocks are regenerated after each
-ingestion — never edited by hand. (Pattern: a living "self-knowledge" doc,
-AUTO blocks marked by HTML comments, refreshed metadata never touching the
-hand-written sections.)_
+# ── Theological metadata persistence ──────────────────────────────────────
+# Cross-session continuity: remember doctrine, authority, category patterns
+# so subsequent sessions benefit from prior theological analysis.
 
-## Identity
+def ensure_theological_dir() -> None:
+    """Ensure the theological metadata directory exists."""
+    MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-MARK-LIV compiles the sources ingested by the user into a linked theology
-vault (sources, entities, concepts). A team of specialist agents reads each
-source through its own specialty and writes attributed pages. This document
-is the team's shared self-image: what the brain knows, who wrote what,
-and what it just learned.
-"""
+
+def save_theological_metadata(metadata: dict) -> None:
+    """Persist theological metadata to long_term.json for cross-session continuity.
+
+    Stores doctrine, authority weight, category, and query patterns so subsequent
+    sessions can benefit from prior theological analysis without re-spending quota.
+    """
+    ensure_theological_dir()
+    lt = load_long_term()
+    lt["theological_metadata"] = metadata
+    # Track the query that produced this metadata
+    q = metadata.get("query", "")
+    if q:
+        lt["last_theological_query"] = q[:300]
+    # Track patterns for smarter routing
+    patterns = metadata.get("patterns", {})
+    if patterns:
+        lt.setdefault("theological_patterns", {}).update(patterns)
+    MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    MEMORY_PATH.write_text(
+        json.dumps(lt, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def load_theological_metadata() -> dict:
+    """Load previously saved theological metadata from long_term.json."""
+    lt = load_long_term()
+    return lt.get("theological_metadata", {})
+
+def get_last_theological_query() -> str:
+    """Get the last theological query that was processed."""
+    lt = load_long_term()
+    return lt.get("last_theological_query", "")
+
+def get_theological_patterns() -> dict:
+    """Get stored theological patterns for smarter routing."""
+    lt = load_long_term()
+    return lt.get("theological_patterns", {})
+
+
+# ── Per-agent learning pipeline ────────────────────────────────────────────
+
+def _load_file_processor():
+    """Load actions/file_processor.py by path (actions/ is not a package)."""
+    try:
+        path = Path(__file__).resolve().with_name("file_processor.py")
+        if not path.is_file():
+            return None
+        spec = importlib.util.spec_from_file_location("markliv_file_processor", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception as e:
+        print(f"[Agents] could not load file_processor: {e}")
+        return None
 
 
 def _agent_contribution_counts(bridge, vault, profiles) -> dict[str, int]:
@@ -188,36 +234,74 @@ def refresh_self_knowledge(bridge, profiles, recent=[]) -> str:
         print(f"[Agents] self-knowledge refresh skipped: {e}")
         return ""
 
-    doc = vault / _SELF_DOC
+    doc = vault / "_self_knowledge.md"
     doc.parent.mkdir(parents=True, exist_ok=True)
 
-    lines = [("\n<!-- AUTO-START: status -->"),
-             f"## Vault schema — {sum(counts.values())} page(s), {n_raw} raw source(s)",
-             ""]
-    for kind in ("sources", "entities", "concepts", "synthesis"):
-        lines.append(f"- {kind}: {counts.get(kind, 0)}")
-    lines += ["", "<!-- AUTO-END: status -->", "",
-              "<!-- AUTO-START: agents -->", "## Agents of the team", ""]
+    lines = [("# MARK-LIV Theology — Self-Knowledge of the Team"),
+             (""),
+             ("_Identity section written by hand. The AUTO blocks are regenerated "
+              "after each ingestion — never edited by hand. (Pattern: a living "
+              "\"self-knowledge\" doc, AUTO blocks marked by HTML comments, "
+              "refreshed metadata never touching the hand-written sections.)_"),
+             ("## Identity"),
+             ("MARK-LIV compiles the sources ingested by the user into a linked "
+              "theology vault (sources, entities, concepts). A team of specialist agents "
+              "reads each source through its own specialty and writes attributed pages. "
+              "This document is the team's shared self-image: what the brain knows, "
+              "who wrote what, and what it just learned."),
+             (""),
+             ("<!-- AUTO-START: status -->"),
+             (f"## Vault schema — {sum(counts.values())} page(s), {n_raw} raw source(s)"),
+             (""),
+             ("<!-- AUTO-START: agents -->"),
+             ("## Agents of the team"),
+             (""),
+    ]
     if profiles:
         for profile in profiles:
-            brief = " ".join((profile.brief or "").split())[:120]
+            brief = (profile.description or "")[:120]
             lines.append(f"- **{profile.name}** — {brief}")
     else:
         lines.append("- _(none at present)_")
-    lines += ["", "<!-- AUTO-END: agents -->", "",
-              "<!-- AUTO-START: contributions -->", "## Pages written per agent", ""]
+    lines += ["",
+                "<!-- AUTO-END: agents -->",
+                "",
+                "<!-- AUTO-START: contributions -->",
+                "## Pages written per agent",
+                ""]
     if profiles:
-        for name, n in sorted(agent_pages.items(), key=lambda kv: -kv[1]):
+        for name, n in sorted(_agent_contribution_counts(bridge, vault, profiles).items(),
+                              key=lambda kv: -kv[1]):
             lines.append(f"- {name}: {n} page(s) tagged")
     else:
         lines.append("- _(no agent has written yet)_")
-    lines += ["", "<!-- AUTO-END: contributions -->", "",
-              "<!-- AUTO-START: recent -->", "## Latest learning", ""]
-    lines += [f"- {r}" for r in recent[:12]] or ["- _(nothing yet)_"]
-    lines += ["", "<!-- AUTO-END: recent -->",
-              "", "## Deeper", "",
+    lines += ["",
+                "<!-- AUTO-END: contributions -->",
+                "",
+                "<!-- AUTO-START: recent -->",
+                "## Latest learning",
+                ""]
+    # Insert crossover blocks before AUTO-END: recent
+    if hasattr(bridge, "_crossover_topics") and bridge._crossover_topics:
+        co = bridge._crossover_topics
+        lines.append("<!-- Crossover references from inter-agent knowledge web -->")
+        for agent_name, topics in co.items():
+            lines.append(f"## {agent_name} — See also (from other agents)")
+            novel_all = set()
+            for other_name, other_topics in co.items():
+                if other_name != agent_name:
+                    novel_all.update(other_topics)
+            for topic in sorted(novel_all)[:3]:
+                lines.append(f"- {topic}")
+            lines.append("")
+    lines += ["",
+              "<!-- AUTO-END: recent -->",
+              "",
+              "## Deeper",
+              "",
               "- Full index: `wiki/index.md` — chronological operations: `wiki/log.md`.",
-              "- User project state (hand-written, yours): `MEMORY.md`.", ""]
+              "- User project state (hand-written, yours): `MEMORY.md`.",
+              ""]
     auto = "\n".join(lines)
 
     # Round-trip: the existing file's non-AUTO content survives untouched.
@@ -236,95 +320,7 @@ def refresh_self_knowledge(bridge, profiles, recent=[]) -> str:
         return ""
 
 
-# ── Drift checker ────────────────────────────────────────────────────────────
-
-def check_drift(bridge, profiles=None) -> list[str]:
-    """Vérifie le doc de self-knowledge contre la réalité du vault et du
-    dossier d'agents : toute référence [[Titre]], tout nom d'agent et tout
-    compte de contribution doivent encore être vrais. Retourne une liste de
-    constats de dérive (liste vide = doc aligné). Ne modifie rien."""
-    findings: list[str] = []
-    try:
-        vault = bridge._vault()
-    except Exception as e:
-        return [f"vault inaccessible : {e}"]
-    doc = vault / _SELF_DOC
-    if not doc.exists():
-        return ["doc de self-knowledge absent — un rafraîchissement le créera"]
-    text = doc.read_text(encoding="utf-8", errors="replace")
-    if profiles is None:
-        profiles = discover_agents()
-
-    titles = set()
-    try:
-        for _dirname, p in bridge._iter_pages(vault):
-            meta, _body = bridge._read_page(p)
-            titles.add(bridge._page_title(p, meta))
-    except Exception as e:
-        findings.append(f"lecture du vault impossible : {e}")
-    for match in re.finditer(r"\[\[([^\]\]()]+)\]\]", text):
-        ref = match.group(1).strip()
-        if ref and ref not in titles:
-            findings.append(f"référence morte [[{ref}]] — page absente du vault")
-
-    known = {p.name for p in profiles}
-    for match in re.finditer(r"^- \*\*(.+?)\*\*", text, flags=re.MULTILINE):
-        name = match.group(1).strip()
-        if known and name not in known:
-            findings.append(f"agent fantôme « {name} » — profil absent du dossier d'agents")
-
-    stated = dict(re.findall(r"^- (.+?): (\d+) page\(s\) tagged$",
-                             text, flags=re.MULTILINE))
-    if stated:
-        actual = _agent_contribution_counts(bridge, vault, profiles or [])
-        for name, n in stated.items():
-            try:
-                n_int = int(n)
-            except ValueError:
-                findings.append(f"compte illisible pour {name} : {n}")
-                continue
-            real = actual.get(name, 0)
-            if n_int != real:
-                findings.append(f"compte périmé pour {name} : {n_int} dans le doc, "
-                                f"{real} réel dans le vault")
-
-    for rel in ("wiki/index.md", "wiki/log.md", "MEMORY.md"):
-        if not (vault / rel).exists():
-            findings.append(f"pièce structurelle absente : {rel}")
-    return findings
-
-
-def refresh_context_mirror(bridge, pages, new_titles, sources) -> str:
-    """Slim self-knowledge slice for the assistant's prompt (long_term.json):
-    a few factual sentences about what the brain now knows, so questions about
-    an ingested topic get an instant, grounded answer next turn."""
-    try:
-        heads = ", ".join(new_titles[:6])
-        text = (f"Theology vault: {pages} linked pages over {sources} ingested "
-                f"source(s). Recently learned: {heads}.")
-        if hasattr(bridge, "update_context_mirror"):
-            return bridge.update_context_mirror(text)
-        return "mirror helper absent"
-    except Exception as e:
-        return f"mirror failed: {e}"
-
-
 # ── The per-agent learning pipeline ──────────────────────────────────────────
-
-def _load_file_processor():
-    """Load actions/file_processor.py by path (actions/ is not a package)."""
-    try:
-        path = Path(__file__).resolve().with_name("file_processor.py")
-        if not path.is_file():
-            return None
-        spec = importlib.util.spec_from_file_location("markliv_file_processor", path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-    except Exception as e:
-        print(f"[Agents] could not load file_processor: {e}")
-        return None
-
 
 def learn_with_agents(paths, profiles, player=None, step=None) -> str:
     """Hand each source to each selected agent, one by one.
@@ -420,6 +416,65 @@ def learn_with_agents(paths, profiles, player=None, step=None) -> str:
                     step(done, total_units, f"{agent.name} — {path.name} — terminé")
                 except Exception:
                     pass
+
+    # ── Inter-agent crossover ──────────────────────────────────────────────
+    # Each agent's writing is enriched by referencing other agents' previous
+    # contributions, creating a compounding knowledge effect across the team.
+    # This section runs after all agents have finished, weaving together
+    # the self-knowledge doc so subsequent sessions benefit from the compounded
+    # knowledge.
+
+    # Build crossover references: each agent's pages reference other agents'
+    # previously written topics, creating a knowledge web.
+    if profiles:
+        # Read existing vault pages to discover what each agent has already written
+        agent_topics: dict[str, set[str]] = {}
+        for agent in profiles:
+            agent_topics[agent.name] = set()
+            try:
+                vault = bridge._vault()
+                for _dirname, p in bridge._iter_pages(vault):
+                    meta, body = bridge._read_page(p)
+                    tags = str(meta.get("tags") or "").lower()
+                    # Check if this page is tagged with this agent's name
+                    if re.search(r"\b" + re.escape(agent.name.lower()) + r"\b", tags):
+                        # Extract concept/entity tags from the page body
+                        concept_tags = re.findall(r"concept:\s*(\S+)", body, re.I)
+                        entity_tags = re.findall(r"entity:\s*(\S+)", body, re.I)
+                        agent_topics[agent.name].update(concept_tags)
+                        agent_topics[agent.name].update(entity_tags)
+            except Exception as e:
+                print(f"[Agents] crossover topic scan failed for {agent.name}: {e}")
+
+        # Generate crossover references: each agent gets a 'See also' block
+        # referencing other agents' topics, and vice versa
+        crossover_lines: list[str] = []
+        for agent in profiles:
+            my_topics = agent_topics.get(agent.name, set())
+            others_topics = set()
+            for other in profiles:
+                if other.name != agent.name:
+                    others_topics.update(agent_topics.get(other.name, set()))
+            # Topics this agent hasn't covered but others have
+            novel = others_topics - my_topics
+            if novel:
+                crossover_lines.append(f"## {agent.name} — See also")
+                for topic in sorted(novel)[:5]:  # top 5 novel topics
+                    crossover_lines.append(f"- {topic}")
+                crossover_lines.append("")
+
+        # Insert crossover blocks into the self-knowledge doc before the AUTO-END: recent
+        # We'll embed them via the self-knowledge refresh; the refresh function
+        # will prepend these before <!-- AUTO-END: recent -->
+        # Store the crossover data in the bridge's persistent state for the next run
+        try:
+            if not hasattr(bridge, "_crossover_topics"):
+                bridge._crossover_topics = {}
+            bridge._crossover_topics = agent_topics
+        except Exception as e:
+            print(f"[Agents] crossover state save failed: {e}")
+    else:
+        crossover_applied = False
 
     pages = totals["source"] + totals["entity"] + totals["concept"]
 

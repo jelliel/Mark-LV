@@ -56,7 +56,10 @@ from pathlib import Path
 VAULT_DIRNAME = "Theology"          # folder inside the user's Documents
 CONFIG_KEY = "theology_vault_path"  # optional override in config/api_keys.json
 MAX_READ_CHARS = 6000               # cap for action='read'
-SEARCH_SNIPPET = 220                # chars of context per search hit
+# Enough of each hit for the model to READ what it is about to recite: a
+# snippet too short to carry an argument produces a reading that was invented
+# somewhere else.
+SEARCH_SNIPPET = 400                # chars of context per search hit
 
 # kind (singular) -> wiki subdirectory
 _KIND_DIRS = {
@@ -310,6 +313,19 @@ def vault_router():
     spec.loader.exec_module(module)
     _ROUTER = module
     return module
+
+
+def _reading_frame() -> str:
+    """How what the brain returned is to be read back.
+
+    The router owns the frame — one behaviour for every path that retrieves
+    from the vault. If it cannot be loaded the search still returns its hits:
+    a lost instruction is not a failed search."""
+    try:
+        return str(vault_router().READING_FRAME or "")
+    except Exception as e:
+        print(f"[TheologyBrain] reading frame unavailable: {e}")
+        return ""
 
 
 # ── the page index ──────────────────────────────────────────────────────────
@@ -749,6 +765,13 @@ def _action_search(vault: Path, params: dict) -> str:
         lines.append(f"\n- [[{title}]]  ({dirname}, score {score}) — {path}")
         if snippet:
             lines.append(f"  …{snippet}…")
+    # The brain answered: what comes back is read theologically, not listed.
+    # The frame is the one the application uses before the answer — same
+    # reading whichever path the search took.
+    frame = _reading_frame()
+    if frame:
+        lines.append("")
+        lines.append(frame)
     return "\n".join(lines)
 
 

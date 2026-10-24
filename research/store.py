@@ -47,6 +47,10 @@ class Run:
     notes: list = field(default_factory=list)
     outline: dict = field(default_factory=dict)
     critique: dict = field(default_factory=dict)
+    # The reading, composed from the outline and checked against the closed
+    # vocabulary of authorities and weights (research/reading.py). Empty for a
+    # non-theological run, and for a run whose reading would not check out.
+    reading: dict = field(default_factory=dict)
     events: list = field(default_factory=list)
     report_path: str = ""
     error: str = ""

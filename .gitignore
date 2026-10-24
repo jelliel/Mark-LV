@@ -4,6 +4,16 @@
 # first experience — so nothing here needs to be committed, and some of it must
 # never be.
 
+# ── Leftover editor/scratch files ────────────────────────────────────────────
+*.bak
+*_backup.py
+
+# ── Session transcripts — never commit these ─────────────────────────────────
+# A transcript captures tool output verbatim, and reading config/api_keys.json
+# puts the live key into the transcript. One file, two credentials leaked.
+session-*.md
+.remember/
+
 # ── Secrets. Committing any of these publishes them. ──────────────────────────
 # The explanation goes on its own line: a trailing "# …" is part of the
 # PATTERN in a .gitignore, so "config/api_keys.json   # your key" ignores

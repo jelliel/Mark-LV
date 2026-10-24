@@ -22,6 +22,8 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
+from . import reading as reading_mod
+
 _LABELS = {
     "fr": {
         "tldr": "En bref", "sources": "Sources", "limits": "Contradictions et limites",
@@ -187,6 +189,15 @@ def render(run, sections: list[tuple[str, str]], meta: dict | None = None) -> st
         head.append("")
 
     body_lines = list(head)
+    # The reading comes before the sections: it is what the report holds on the
+    # subject, in the authorities it speaks with and with its weight marked —
+    # the part a reader who will not read five sections still owes themselves.
+    # It is the same structure the spoken announcement and the vault's
+    # synthesis page carry, rendered from the same checked data.
+    reading_block = reading_mod.render_markdown(
+        reading_mod.for_run(run), reading_mod.language_of(run))
+    if reading_block:
+        body_lines += [reading_block, ""]
     for heading, prose in clean_sections:
         body_lines += [f"## {heading}", "", prose, ""]
 
