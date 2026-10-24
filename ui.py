@@ -6034,7 +6034,7 @@ class BrainPanel(QWidget):
 
     def _build_left_col(self) -> QWidget:
         w = QWidget()
-        w.setStyleSheet(f"background: rgba(1,13,20,0.8); border: 1px solid {_BRAIN_BRD}; border-radius: 4px;")
+        w.setStyleSheet(f"background: rgba(1,13,20,0.8);")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(8, 6, 8, 6)
         lay.setSpacing(4)
@@ -6096,7 +6096,7 @@ class BrainPanel(QWidget):
 
     def _build_right_col(self) -> QWidget:
         w = QWidget()
-        w.setStyleSheet(f"background: rgba(1,13,20,0.8); border: 1px solid {_BRAIN_BRD}; border-radius: 4px;")
+        w.setStyleSheet(f"background: rgba(1,13,20,0.8);")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(8, 6, 8, 6)
         lay.setSpacing(4)
@@ -6115,7 +6115,7 @@ class BrainPanel(QWidget):
         self._log_box.setMaximumHeight(140)
         self._log_box.setStyleSheet(f"""
             QTextEdit {{ background: #050a0f; color: {_BRAIN_TXT};
-                border: 1px solid {_BRAIN_BRD}; border-radius: 3px; padding: 4px; }}
+                padding: 4px; }}
         """)
         lay.addWidget(self._log_box)
 
@@ -6127,7 +6127,7 @@ class BrainPanel(QWidget):
         self._agents_box.setMaximumHeight(100)
         self._agents_box.setStyleSheet(f"""
             QTextEdit {{ background: #050a0f; color: {_BRAIN_TXT};
-                border: 1px solid {_BRAIN_BRD}; border-radius: 3px; padding: 4px; }}
+                padding: 4px; }}
         """)
         lay.addWidget(self._agents_box)
 
@@ -6139,7 +6139,7 @@ class BrainPanel(QWidget):
         self._cmd_input.setFont(QFont(_FONT_H, 9))
         self._cmd_input.setStyleSheet(f"""
             QLineEdit {{ background: #050a0f; color: {_BRAIN_TXT};
-                border: 1px solid {_BRAIN_BRD}; border-radius: 3px; padding: 4px 6px; }}
+                padding: 4px 6px; }}
             QLineEdit:focus {{ border-color: {_BRAIN_CYAN}; }}
         """)
         inp_row.addWidget(self._cmd_input)
