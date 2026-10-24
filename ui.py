@@ -3889,6 +3889,8 @@ class MainWindow(QMainWindow):
             self._position_quick_drawer()
         if hasattr(self, '_ctrl_drawer') and self._ctrl_drawer.isVisible():
             self._position_ctrl_drawer()
+        if self._brain_panel is not None and self._brain_panel.isVisible():
+            self._reposition_brain_panel()
         self._fit_video()
 
     def _update_metrics(self):
@@ -4771,7 +4773,13 @@ class MainWindow(QMainWindow):
             self._hide_quiz()
         self._content_panel.hide()
 
-        self._brain_panel = BrainPanel(self.centralWidget())
+        cw = self.centralWidget()
+        pw, ph = 960, 640
+        x = (cw.width()  - pw) // 2
+        y = (cw.height() - ph) // 2
+        self._brain_panel = BrainPanel(cw)
+        self._brain_panel.setFixedSize(pw, ph)
+        self._brain_panel.setGeometry(x, y, pw, ph)
         self._brain_panel.set_data(data)
         self._brain_panel._close_sig.connect(self._hide_brain_panel)
         self._brain_panel.show()
@@ -4783,6 +4791,16 @@ class MainWindow(QMainWindow):
             self._brain_panel.hide()
             self._brain_panel.deleteLater()
             self._brain_panel = None
+
+    def _reposition_brain_panel(self):
+        if self._brain_panel is None or not self._brain_panel.isVisible():
+            return
+        cw = self.centralWidget()
+        pw, ph = self._brain_panel.width(), self._brain_panel.height()
+        self._brain_panel.move(
+            (cw.width()  - pw) // 2,
+            (cw.height() - ph) // 2,
+        )
 
     def _quiz_clear_answers(self):
         while self._quiz_answers_lay.count():
