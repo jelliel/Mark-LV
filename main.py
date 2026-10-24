@@ -634,70 +634,37 @@ class JarvisLive:
             notify=lambda msg: self.ui.write_log(f"SYS: {msg}"),
         )
         self.ui.get_plugins = self._plugin_registry.list_for_ui
-        self.ui.get_plugin_settings = self._plugin_registry.settings_schemas  # ⚙ settings tab
-        self.ui.request_say = self.plugin_say   # plugins: mid-task speech channel
-        self.ui.file_selected.connect(self.on_file_selected)
+        self.ui.get_plugin_settings = self._settings_schemas  # ⚙ settings tab
+        self.ui.request_say = self.plugin_say                 # plugins: mid-task speech channel
+        # A dropped file is NOT handled here. The drop zone tells the model
+        # ([FILE_UPLOADED]), the model calls file_processor with no action, and
+        # the ingestion window opens ONCE — the real one, with the agents of
+        # the user's own agents folder. A second window here would ask the
+        # same question twice, and `self.ui` has no `file_selected` signal to
+        # connect to in any case: it belongs to the drop zone, so the line
+        # this replaces was an AttributeError waiting for the first launch.
 
-    def on_file_selected(self, path: str):
-        """Handle file dropped into the ingestion box: show a popup to choose
-        between Analyse and Learn, and for Learn list theological agents."""
-        from PyQt6.QtWidgets import QMessageBox, QInputDialog, QListWidget, QListWidgetItem, QDialog, QVBoxLayout, QPushButton, QHBoxLayout, QLabel, QRadioButton, QButtonGroup
-        from pathlib import Path
-        import asyncio
+        # The vault's table of contents, in the prompt. A model cannot look for
+        # what it does not know exists: without this line, the assistant has no
+        # reason to consult the vault before answering a theological question
+        # from memory — and a question answered from memory is a question the
+        # vault never learns. Cheap: the page index is read once, and the
+        # mirror is one small file.
+        self._brain = sys.modules.get("actions.theology_brain")
+        try:
+            if self._brain is not None and hasattr(self._brain, "refresh_context_mirror"):
+                self._brain.refresh_context_mirror()
+                # The vault is read once here, so the first question of the
+                # session does not pay for it in the middle of a voice turn.
+                self._brain.vault_router().warm()
+        except Exception as e:
+            print(f"[JARVIS] theology mirror unavailable: {e}")
 
-        # First ask action
-        msg = QMessageBox(self.ui)
-        msg.setWindowTitle("File ingested")
-        msg.setText(f"File selected: {Path(path).name}")
-        msg.setInformativeText("What would you like to do with this file?")
-        analyse_btn = msg.addButton("Analyse", QMessageBox.ButtonRole.ActionRole)
-        learn_btn = msg.addButton("Learn", QMessageBox.ButtonRole.ActionRole)
-        msg.addButton(QMessageBox.StandardButton.Cancel)
-        msg.setDefaultButton(analyse_btn)
-        msg.exec()
-        clicked = msg.clickedButton()
-
-        if clicked == analyse_btn:
-            # Just call existing file processor via tool? We'll just invoke file_processor describe as placeholder
-            async def do_analyse():
-                # Use the existing file_processor tool via the session? For simplicity, we'll just log.
-                self.ui.write_log(f"[Ingestion] Analyse not fully implemented; would process {path}")
-                # Optionally, you could call the file_processor tool here via self.session.send_client_content...
-            if self._loop and self.session:
-                asyncio.run_coroutine_threadsafe(do_analyse(), self._loop)
-            return
-
-        if clicked == learn_btn:
-            # List theological agents (placeholder list)
-            agents = ["Theological Agent 1", "Theological Agent 2", "Theological Agent 3"]
-            # Use a custom dialog with radio buttons
-            dialog = QDialog(self.ui)
-            dialog.setWindowTitle("Select theological agent for learning")
-            layout = QVBoxLayout(dialog)
-            label = QLabel("Choose the agent to train with this file:")
-            layout.addWidget(label)
-            radio_group = QButtonGroup(dialog)
-            for i, name in enumerate(agents):
-                rb = QRadioButton(name)
-                radio_group.addButton(rb, i)
-                layout.addWidget(rb)
-            buttons = QHBoxLayout()
-            ok_btn = QPushButton("OK")
-            cancel_btn = QPushButton("Cancel")
-            buttons.addWidget(ok_btn)
-            buttons.addWidget(cancel_btn)
-            layout.addLayout(buttons)
-            ok_btn.clicked.connect(dialog.accept)
-            cancel_btn.clicked.connect(dialog.reject)
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                selected_id = radio_group.checkedId()
-                if selected_id >= 0:
-                    selected_agent = agents[selected_id]
-                    self.ui.write_log(f"[Ingestion] Learning selected: {selected_agent} for file {path}")
-                    self._train_theological_agent(selected_agent, path)
-            else:
-                self.ui.write_log("[Ingestion] Learning cancelled")
-        # If cancel clicked, do nothing
+        # The vault is consulted BEFORE the model answers, not because the
+        # model was asked to: the application asks the vault itself and hands
+        # what it finds to the conversation. One flag per turn, so a question
+        # split over several transcription chunks is routed once.
+        self._vault_routed = False
 
         # ── Wake word ────────────────────────────────────────────────────────
         # _awake gates the mic (see _listen_audio) and the background speakers.
@@ -713,6 +680,11 @@ class JarvisLive:
         if get_push_to_talk_enabled():
             try:
                 self.set_push_to_talk(True)
+                # The microphone is CLOSED until the chord is held. Saying so on
+                # the HUD is the difference between "the mic is broken" and
+                # "hold the key" — the stream is open either way, and an open
+                # stream that hears nothing looks exactly like a dead one.
+                self.ui.set_state(self._ptt_state() or "SLEEPING")
             except Exception as e:
                 print(f"[JARVIS] ⚠ Push-to-talk unavailable: {e}")
         # UI control surface for the Wake Word settings section.
@@ -722,11 +694,136 @@ class JarvisLive:
         self.ui.on_wake_manual   = self._ui_wake_manual   # () -> toggle awake/asleep
         self.ui.on_wake_install  = self._ui_wake_install  # () -> (ok, msg)
 
+    def _settings_schemas(self) -> list[dict]:
+        """Every settings section, actions first, then plugins.
+
+        A knob an action owns (the theology vault's path, the ceiling on
+        automatic research) is shown in the same tab as a plugin's: a setting
+        the user cannot find is a setting the user cannot turn off. Sections
+        are deduped by namespace, so a suite that shares one namespace shows
+        one form."""
+        out, seen = [], set()
+        for section in (self._action_registry.settings_schemas()
+                        + self._plugin_registry.settings_schemas()):
+            ns = section.get("namespace")
+            if not ns or ns in seen:
+                continue
+            seen.add(ns)
+            out.append(section)
+        return out
+
+    # ── the vault, before the answer ────────────────────────────────────────
+    async def _route_vault(self, text: str) -> bool:
+        """Consult the vault before the model answers. True if something was
+        sent to the conversation.
+
+        The vault is not a tool the model has to remember to call. It is
+        consulted here, and what it holds is handed over: the pages, with
+        their text, so the answer comes from the user's own reading. A
+        theological question the vault does not hold starts a research run —
+        also here, also without asking the model.
+
+        Both the consultation and the measurement are local and cached: a few
+        milliseconds, once per turn, and nothing at all when the question is
+        not the vault's business."""
+        brain = self._brain
+        if brain is None:
+            return False
+        try:
+            router = brain.vault_router()
+            decision = router.route(text)
+        except Exception as e:
+            print(f"[JARVIS] vault route failed: {e}")
+            return False
+
+        kind = decision.get("kind")
+        if kind == "vault":
+            context = decision.get("context") or ""
+            if context:
+                await self._inject(context)
+                return True
+            return False
+        if kind == "gap":
+            note = await self._start_vault_research(text)
+            if note:
+                await self._inject(note)
+                return True
+        return False
+
+    async def _inject(self, text: str) -> None:
+        """Hand a message to the conversation, without ending the turn.
+
+        The message joins the turn the user is speaking, so the model has it
+        before it answers — which is the whole point of asking the vault
+        first."""
+        if not text or not self.session:
+            return
+        try:
+            await self.session.send_client_content(
+                turns={"role": "user", "parts": [{"text": text}]},
+                turn_complete=False)
+            self.ui.write_log(f"[VAULT] {text.splitlines()[0][:80]}")
+        except Exception as e:
+            print(f"[JARVIS] could not hand the vault to the conversation: {e}")
+
+    async def _start_vault_research(self, query: str) -> str:
+        """The vault has nothing on this question: start the research that
+        will fill it, and return what the conversation is told.
+
+        The research engine is a heavy import (requests, the search stack), so
+        it is done off the audio path: a voice turn must not wait for it."""
+        loop = asyncio.get_event_loop()
+        try:
+            return await loop.run_in_executor(
+                None, self._research_for_gap, query)
+        except Exception as e:
+            print(f"[JARVIS] vault research not started: {e}")
+            return ""
+
+    def _research_for_gap(self, query: str) -> str:
+        """Off the audio path: the research engine, imported on first need."""
+        try:
+            from research import theology as bridge
+            return bridge.start_and_report(query, player=self.ui,
+                                           speak=self.speak,
+                                           source="vault-router")
+        except Exception as e:
+            print(f"[JARVIS] vault research not started: {e}")
+            return ""
+
     def _train_theological_agent(self, agent_name: str, file_path: str):
-        """Placeholder for training a theological agent with the given file.
-        Replace this with actual training logic or API call."""
-        self.ui.write_log(f"[Ingestion] Training agent '{agent_name}' with file '{file_path}' (stub)")
-        # TODO: implement actual training, e.g., call an API, run a script, etc.
+        """Hand a source to one theology agent, for the learning pipeline.
+
+        The pipeline itself lives in `actions/theology_agents.py`
+        (`learn_with_agents`), which the ingestion window drives: it reads the
+        source through the agent's own brief and writes the attributed pages
+        into the vault. This is the single-file entry point to the same
+        pipeline, for a caller that already knows which agent to use."""
+        import importlib.util
+        path = Path(__file__).resolve().parent / "actions" / "theology_agents.py"
+        try:
+            spec = importlib.util.spec_from_file_location("markliv_theology_agents", path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"cannot load {path}")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules["markliv_theology_agents"] = module
+            spec.loader.exec_module(module)
+        except Exception as e:
+            self.ui.write_log(f"[Ingestion] the theology agents are unavailable: {e}")
+            return
+        profile = next((p for p in module.discover_agents()
+                        if p.name == agent_name), None)
+        if profile is None:
+            self.ui.write_log(f"[Ingestion] no agent named '{agent_name}' in the "
+                              f"agents folder")
+            return
+        try:
+            summary = module.learn_with_agents([Path(file_path)], [profile],
+                                               player=self.ui)
+        except Exception as e:
+            self.ui.write_log(f"[Ingestion] the agent could not read the file: {e}")
+            return
+        self.ui.write_log(f"[Ingestion] {summary}")
 
     # ── Wake word: state machine ─────────────────────────────────────────────
 
@@ -776,7 +873,7 @@ class JarvisLive:
         self._awake = True
         self._last_user_speech = time.monotonic()   # start the auto-sleep clock now
         if not self.ui.muted:
-            self.ui.set_state("LISTENING")
+            self.ui.set_state(self._listening_state())
         self.ui.write_log(f"SYS: Awake — {reason}.")
 
     def sleep(self, reason: str = "timeout") -> None:
@@ -962,7 +1059,7 @@ class JarvisLive:
         if value:
             self.ui.set_state("SPEAKING")
         elif not self.ui.muted:
-            self.ui.set_state("LISTENING")
+            self.ui.set_state(self._listening_state())
 
     def set_push_to_talk(self, enabled: bool) -> str:
         """Turn hold-to-talk on or off. Returns the scope actually achieved."""
@@ -974,22 +1071,44 @@ class JarvisLive:
             if self._ptt is not None:
                 self._ptt.stop()
                 self._ptt = None
+            self._ptt_label = ""
             return "off"
 
         if self._ptt is None:
             self._ptt = PushToTalk(self._on_ptt)
         scope = self._ptt.start()
+        self._ptt_label = self._ptt.label
         # A window-scoped chord is a real limitation, not a detail — say it once
         # in the log so nobody wonders why it does nothing while another app is
         # focused. Reporting it must never be able to undo the thing it reports.
+        _scope_note = ("" if scope == "global"
+                       else " (works while this window is focused)")
+        message = (f"Push-to-talk on — hold {self._ptt_label}"
+                   f"{_scope_note}. The microphone stays closed until you do.")
+        # The console too: the activity log is a panel nobody is reading at
+        # start-up, and a closed microphone that LOOKS open is the worst kind
+        # of broken.
+        print(f"[JARVIS] 🎤 {message}")
         try:
-            self.ui.write_log(
-                f"SYS: Push-to-talk on — hold {self._ptt.label}"
-                + ("." if scope == "global"
-                   else " (works while this window is focused)."))
+            self.ui.write_log(f"SYS: {message}")
         except Exception:
             pass
         return scope
+
+    def _ptt_state(self) -> str:
+        """What the HUD should say while the microphone is closed by the chord.
+
+        "SLEEPING" is the wake word's word. A microphone that is closed
+        because a key is not held is a different thing entirely, and saying
+        so is the difference between a mystery and an answer."""
+        if not self._ptt_enabled or self._ptt_held:
+            return ""
+        return f"HOLD {self._ptt_label}" if self._ptt_label else "HOLD TO TALK"
+
+    def _listening_state(self) -> str:
+        """The state to show when the microphone is open — unless the chord
+        says otherwise, in which case the chord wins: the mic is NOT open."""
+        return self._ptt_state() or "LISTENING"
 
     def _on_ptt(self, held: bool) -> None:
         """Chord pressed or released — may arrive on the hotkey thread."""
@@ -1001,7 +1120,8 @@ class JarvisLive:
                 self._awake = True
                 self._last_user_speech = time.monotonic()
         try:
-            self.ui.set_state("LISTENING" if held else "SLEEPING")
+            self.ui.set_state("LISTENING" if held else (self._ptt_state()
+                                                       or "SLEEPING"))
         except Exception:
             pass
 
@@ -1041,7 +1161,11 @@ class JarvisLive:
     def speak_error(self, tool_name: str, error: str):
         short = str(error)[:120]
         self.ui.write_log(f"ERR: {tool_name} — {short}")
-        self.speak(f"Sir, {tool_name} encountered an error. {short}")
+        # No address form and no English: this text is handed to the model,
+        # which then speaks to the user in their own language.
+        self.speak(f"[TOOL_ERROR] {tool_name} failed: {short}. Say what failed "
+                   f"in one short sentence, in the user's language, and offer the "
+                   f"undo tool if the failure changed something on their machine.")
 
     def _build_config(self) -> types.LiveConnectConfig:
         from datetime import datetime
@@ -1225,7 +1349,7 @@ class JarvisLive:
                 update_memory({category: {key: {"value": value}}})
                 print(f"[Memory] 💾 save_memory: {category}/{key} = {value}")
             if not self.ui.muted:
-                self.ui.set_state("LISTENING")
+                self.ui.set_state(self._listening_state())
             return types.FunctionResponse(
                 id=fc.id, name=name,
                 response={"result": "ok", "silent": True}
@@ -1358,7 +1482,7 @@ class JarvisLive:
             self.speak_error(name, e)
 
         if not self.ui.muted:
-            self.ui.set_state("LISTENING")
+            self.ui.set_state(self._listening_state())
 
         print(f"[JARVIS] 📤 {name} → {str(result)[:80]}")
 
@@ -1614,10 +1738,22 @@ class JarvisLive:
                             if txt:
                                 in_buf.append(txt)
                                 self._last_user_speech = time.monotonic()
+                                # The vault is asked while the user is still
+                                # talking, so what it holds is in the turn
+                                # before the answer is written. One route per
+                                # turn, and never on a message that closes the
+                                # turn: there would be no turn left to add it to.
+                                if not self._vault_routed and not sc.turn_complete:
+                                    if await self._route_vault(" ".join(in_buf)):
+                                        self._vault_routed = True
 
                         if sc.turn_complete:
                             if self._turn_done_event:
                                 self._turn_done_event.set()
+
+                            # A new turn may be routed to the vault again —
+                            # reset before anything can skip it.
+                            self._vault_routed = False
 
                             # If this turn_complete ends an interrupted response, clear the
                             # flag and skip all further processing for that turn.
@@ -1651,6 +1787,7 @@ class JarvisLive:
                             if full_out:
                                 self._last_out_logged = full_out
                                 self.ui.write_log(f"{self._asst_name}: {full_out}")
+                                self.ui.show_refs(full_out)
                                 self._session_log.append(f"{self._asst_name}: {full_out}")
                                 if self._dashboard:
                                     asyncio.create_task(self._dashboard.broadcast({
@@ -1714,6 +1851,11 @@ class JarvisLive:
             print(f"[JARVIS] ⚠️  Output device '{_spk_name}' failed: {_e} — using default")
             self.ui.write_log(f"SYS: Speaker '{_spk_name}' unavailable — using system default.")
             stream = _open_spk(None)
+
+        # Set this process's audio session volume to 100% now that the stream
+        # has created the session. The Windows volume mixer sometimes starts
+        # new apps at 1%.
+        audio_devices.ensure_app_volume()
 
         # Ask the device how far behind the speakers actually are, rather than
         # assuming. This is what the echo tail is sized from, so a machine with a
@@ -2233,7 +2375,7 @@ class JarvisLive:
                         self.ui.write_log("SYS: JARVIS online — sleeping. Say 'Hey Jarvis' to wake me.")
                     else:
                         self._awake = True
-                        self.ui.set_state("LISTENING")
+                        self.ui.set_state(self._listening_state())
                         self.ui.write_log("SYS: JARVIS online.")
 
                     if self._dashboard:

@@ -312,6 +312,50 @@ def _price(query: str) -> str:
         return _format_ddg(query, results)
 
 
+def _tafsir(query: str) -> str:
+    """Quranic exegesis search — searches for tafsir (exegesis) of Quranic verses or themes."""
+    tafsir_query = f"tafsir exegesis explanation of: {query} Quran Quranic verse"
+    try:
+        return _gemini_search(tafsir_query)
+    except Exception as e:
+        _log_gemini_failure("Gemini tafsir", e)
+        results = _ddg_search(f"{query} tafsir ibn kathir tabari qurtobi", max_results=8)
+        return _format_ddg(query, results)
+
+
+def _hadith(query: str) -> str:
+    """Hadith search — searches for hadith texts with focus on authenticity and chains of transmission."""
+    hadith_query = f"hadith sahih bukhari muslim about: {query} prophet muhammad sayings"
+    try:
+        return _gemini_search(hadith_query)
+    except Exception as e:
+        _log_gemini_failure("Gemini hadith", e)
+        results = _ddg_search(f"{query} hadith bukhari muslim isnad", max_results=8)
+        return _format_ddg(query, results)
+
+
+def _fiqh(query: str) -> str:
+    """Islamic jurisprudence search — searches for fiqh rulings and scholarly opinions."""
+    fiqh_query = f"fiqh islamic ruling scholarly opinion on: {query} sharia law madhaba"
+    try:
+        return _gemini_search(fiqh_query)
+    except Exception as e:
+        _log_gemini_failure("Gemini fiqh", e)
+        results = _ddg_search(f"{query} fiqh hanafi maliki shafii hanbali", max_results=8)
+        return _format_ddg(query, results)
+
+
+def _theology_history(query: str) -> str:
+    """Theological history search — searches for historical development of theological concepts."""
+    history_query = f"history development theological concept of: {query} early islam christianity judaism"
+    try:
+        return _gemini_search(history_query)
+    except Exception as e:
+        _log_gemini_failure("Gemini theology history", e)
+        results = _ddg_search(f"{query} history theology early islamic", max_results=8)
+        return _format_ddg(query, results)
+
+
 def _compare(items: list[str], aspect: str) -> str:
     query = (
         f"Compare {', '.join(items)} in terms of {aspect}. "
@@ -374,6 +418,14 @@ def web_search(
             return _research(query)
         if mode == "price":
             return _price(query)
+        if mode == "tafsir":
+            return _tafsir(query)
+        if mode == "hadith":
+            return _hadith(query)
+        if mode == "fiqh":
+            return _fiqh(query)
+        if mode == "theology_history":
+            return _theology_history(query)
         return _search(query)
 
     except Exception as e:
@@ -384,7 +436,7 @@ def web_search(
 # ── Tool declaration (auto-discovered by core/action_loader.py) ──────────────
 TOOL = {
     "name": "web_search",
-    "description": "Searches the web. Use for ANY question about current facts, events, prices, or topics — always prefer this over guessing. Modes: 'search' (default), 'news' (latest headlines on a topic), 'research' (deep comprehensive answer), 'price' (product cost lookup), 'compare' (side-by-side comparison of items).",
+    "description": "Searches the web. Use for ANY question about current facts, events, prices, or topics — always prefer this over guessing. Modes: 'search' (default), 'news' (latest headlines on a topic), 'research' (deep comprehensive answer), 'price' (product cost lookup), 'compare' (side-by-side comparison of items), 'tafsir' (Quranic exegesis search), 'hadith' (Hadith text and chain of transmission search), 'fiqh' (Islamic jurisprudence search), 'theology_history' (historical development of theological concepts).",
     "parameters": {
         "type": "OBJECT",
         "properties": {
@@ -394,7 +446,7 @@ TOOL = {
             },
             "mode": {
                 "type": "STRING",
-                "description": "search | news | research | price | compare"
+                "description": "search | news | research | price | compare | tafsir | hadith | fiqh | theology_history"
             },
             "items": {
                 "type": "ARRAY",
