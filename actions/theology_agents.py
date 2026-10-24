@@ -18,7 +18,6 @@ the same way file_processor loads theology_brain.
 """
 
 import importlib.util
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -121,55 +120,6 @@ def get_agents_dir() -> Path:
     if override:
         return Path(str(override)).expanduser()
     return Path.home() / "Desktop" / "Agents"
-
-
-# ── Theological metadata persistence ──────────────────────────────────────
-# Cross-session continuity: remember doctrine, authority, category patterns
-# so subsequent sessions benefit from prior theological analysis.
-
-def ensure_theological_dir() -> None:
-    """Ensure the theological metadata directory exists."""
-    MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-
-def save_theological_metadata(metadata: dict) -> None:
-    """Persist theological metadata to long_term.json for cross-session continuity.
-
-    Stores doctrine, authority weight, category, and query patterns so subsequent
-    sessions can benefit from prior theological analysis without re-spending quota.
-    """
-    ensure_theological_dir()
-    lt = load_long_term()
-    lt["theological_metadata"] = metadata
-    # Track the query that produced this metadata
-    q = metadata.get("query", "")
-    if q:
-        lt["last_theological_query"] = q[:300]
-    # Track patterns for smarter routing
-    patterns = metadata.get("patterns", {})
-    if patterns:
-        lt.setdefault("theological_patterns", {}).update(patterns)
-    MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    MEMORY_PATH.write_text(
-        json.dumps(lt, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-
-def load_theological_metadata() -> dict:
-    """Load previously saved theological metadata from long_term.json."""
-    lt = load_long_term()
-    return lt.get("theological_metadata", {})
-
-def get_last_theological_query() -> str:
-    """Get the last theological query that was processed."""
-    lt = load_long_term()
-    return lt.get("last_theological_query", "")
-
-def get_theological_patterns() -> dict:
-    """Get stored theological patterns for smarter routing."""
-    lt = load_long_term()
-    return lt.get("theological_patterns", {})
 
 
 # ── Per-agent learning pipeline ────────────────────────────────────────────
