@@ -1312,7 +1312,7 @@ def _qt_ingestion_window(paths, action, params, speak, player, preselect=None):
             if self._profiles:
                 self._agents_heading.setText(labels["agents_heading"])
                 for profile in self._profiles:
-                    brief = " ".join(profile.brief.split())[:80]
+                    brief = " ".join((profile.description or "").split())[:80]
                     box = QCheckBox(f"{profile.name}  —  {brief}…")
                     box.setChecked(True)
                     self._agents_layout.addWidget(box)
@@ -1416,7 +1416,6 @@ def _qt_ingestion_window(paths, action, params, speak, player, preselect=None):
 
     def show_window():
         window = IngestWindow()
-        window.show()
         window.raise_()
         window.activateWindow()
         _ingest_log(f"window: shown with Qt (preselect={preselect})")
