@@ -19,7 +19,7 @@ the same way file_processor loads theology_brain.
 
 import importlib.util
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 AGENTS_DIR_KEY = "theology_agents_dir"   # optional override in config/api_keys.json

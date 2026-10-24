@@ -477,3 +477,131 @@ def pop_last_session() -> dict | None:
         except Exception as e:
             print(f"[Memory] ⚠️ pop_last_session error: {e}")
             return None
+
+# ── Theological metadata persistence ────────────────────────────────────────
+# Cross-session continuity: remember doctrine, authority, category patterns
+# so subsequent sessions benefit from prior theological analysis.
+
+def ensure_theological_dir() -> None:
+    """Ensure the theological metadata directory exists."""
+    MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+def save_theological_metadata(metadata: dict) -> None:
+    """Persist theological metadata to long_term.json for cross-session continuity."""
+    ensure_theological_dir()
+    try:
+        lt = json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        lt = {}
+    lt["theological_metadata"] = metadata
+    q = metadata.get("query", "")
+    if q:
+        lt["last_theological_query"] = q[:300]
+    patterns = metadata.get("patterns", {})
+    if patterns:
+        lt.setdefault("theological_patterns", {}).update(patterns)
+    MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    MEMORY_PATH.write_text(
+        json.dumps(lt, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+def _load_long_term() -> dict:
+    """Read long_term.json safely, returning {} when absent or unparseable."""
+    try:
+        return json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+def load_theological_metadata() -> dict:
+    """Load previously saved theological metadata from long_term.json."""
+    lt = _load_long_term()
+    return lt.get("theological_metadata", {})
+
+def get_last_theological_query() -> str:
+    """Get the last theological query that was processed."""
+    lt = _load_long_term()
+    return lt.get("last_theological_query", "")
+
+def get_theological_patterns() -> dict:
+    """Get stored theological patterns for smarter routing."""
+    lt = _load_long_term()
+    return lt.get("theological_patterns", {})
+
+
+# ── Bibliographic registry ──────────────────────────────────────────────────
+# Stable citation registry: each work gets a document_id with author, work,
+# language, edition and locator (book/chapter/section).
+
+def save_bibliographic_entry(entry: dict) -> None:
+    """Upsert one bibliographic entry keyed by document_id."""
+    ensure_theological_dir()
+    lt = _load_long_term()
+    lt.setdefault("bibliographic", {})
+    doc_id = str(entry.get("document_id", "")).strip()
+    if not doc_id:
+        raise ValueError("bibliographic entry needs a document_id")
+    existing = lt["bibliographic"].get(doc_id, {})
+    existing.update({k: v for k, v in entry.items() if v is not None})
+    lt["bibliographic"][doc_id] = existing
+    MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    MEMORY_PATH.write_text(
+        json.dumps(lt, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+def get_bibliographic_entry(document_id: str) -> dict | None:
+    """Return one bibliographic entry by document_id, or None."""
+    lt = _load_long_term()
+    return lt.get("bibliographic", {}).get(str(document_id))
+
+def list_bibliographic_entries() -> dict:
+    """Return every bibliographic entry (document_id -> entry)."""
+    lt = _load_long_term()
+    return lt.get("bibliographic", {})
+
+def find_bibliographic_entries(query: str) -> list[dict]:
+    """Fuzzy search entries by author, work or document_id."""
+    q = _normalise_text(query)
+    if not q:
+        return []
+    matches = []
+    for doc_id, entry in list_bibliographic_entries().items():
+        hay = " ".join(str(entry.get(k, "")) for k in
+                       ("document_id", "author", "work", "language", "edition"))
+        if q in _normalise_text(hay):
+            matches.append(entry)
+    return matches
+
+def register_vault_source(document_id: str, author: str, work: str,
+                          language: str, edition: str,
+                          book: str = "", chapter: str = "", section: str = "",
+                          text_original: str = "", text_fr: str = "",
+                          source_url: str = "", source_type: str = "primary",
+                          verification_status: str = "pending") -> None:
+    """Convenience: register a vault source as a bibliographic entry."""
+    save_bibliographic_entry({
+        "document_id": document_id,
+        "author": author,
+        "work": work,
+        "language": language,
+        "edition": edition,
+        "book": book,
+        "chapter": chapter,
+        "section": section,
+        "text_original": text_original,
+        "text_fr": text_fr,
+        "source_url": source_url,
+        "source_type": source_type,
+        "verification_status": verification_status,
+    })
+
+def _normalise_text(text: str) -> str:
+    """Lower-case, strip accents, collapse whitespace for matching."""
+    import unicodedata
+    text = str(text).lower()
+    text = "".join(
+        c for c in unicodedata.normalize("NFKD", text)
+        if not unicodedata.combining(c)
+    )
+    return re.sub(r"\s+", " ", text).strip()
