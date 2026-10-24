@@ -6170,8 +6170,8 @@ class BrainPanel(QWidget):
             self._cmd_input.clear()
 
     def _add_log(self, kind: str, text: str):
-        col = {_BRAIN_CYAN if kind == "user" else _BRAIN_GRN}
-        html = f'<span style="color:{col[0]}; font-weight:bold;">{kind.upper()}:</span> {text}'
+        col = _BRAIN_CYAN if kind == "user" else _BRAIN_GRN
+        html = f'<span style="color:{col}; font-weight:bold;">{kind.upper()}:</span> {text}'
         self._log_box.append(html)
         self._log_box.verticalScrollBar().setValue(
             self._log_box.verticalScrollBar().maximum())
@@ -6235,7 +6235,8 @@ class RadarCanvas(QFrame):
         # Core text
         p.setPen(QColor(_BRAIN_CYAN))
         p.setFont(QFont(_FONT_H, 10, QFont.Weight.Bold))
-        p.drawText(cx, cy, 0, 20, Qt.AlignmentFlag.AlignCenter, "THEOLOGICUS")
+        p.drawText(QRect(cx - 50, cy - 10, 100, 20),
+                   Qt.AlignmentFlag.AlignCenter, "THEOLOGICUS")
         p.end()
         self._phase = (self._phase + 2) % 360
 
