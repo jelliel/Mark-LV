@@ -6157,7 +6157,8 @@ class BrainPanel(QWidget):
 
     def _add_log(self, kind: str, text: str):
         col = _BRAIN_CYAN if kind == "user" else _BRAIN_GRN
-        html = f'<span style="color:{col}; font-weight:bold;">{kind.upper()}:</span> {text}'
+        esc = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        html = f'<span style="color:{col}; font-weight:bold;">{kind.upper()}:</span> {esc}'
         self._log_box.append(html)
         self._log_box.verticalScrollBar().setValue(
             self._log_box.verticalScrollBar().maximum())
