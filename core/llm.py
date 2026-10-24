@@ -210,6 +210,7 @@ class MistralProvider(LLMProvider):
 # ── Single entry point ──────────────────────────────────────────────────
 
 _PROVIDERS: dict[str, LLMProvider] = {}
+_LAST_USED: str | None = None
 
 
 def _provider(name: str) -> LLMProvider:
@@ -221,12 +222,24 @@ def _provider(name: str) -> LLMProvider:
     return _PROVIDERS[name]
 
 
+def _log(provider: str, ok: bool, detail: str = "") -> None:
+    global _LAST_USED
+    if ok:
+        _LAST_USED = provider
+        print(f"[LLM] {provider} answered{(' — ' + detail) if detail else ''}")
+    else:
+        print(f"[LLM] {provider} failed{(' — ' + detail) if detail else ''}")
+
+
 def generate(messages: list[dict], model: str = "",
              temperature: float = 0.7, provider: str = "") -> str:
     """One completion through the configured provider.
 
     `provider` overrides the config ("gemini" | "mistral"). Empty → config,
     empty config → "auto" → gemini with mistral fallback if no Gemini key.
+
+    If the chosen provider errors, the other one is tried automatically —
+    never return a hard failure when a backup key can answer.
     """
     name = provider or provider_name()
     if name == "auto":
@@ -235,8 +248,26 @@ def generate(messages: list[dict], model: str = "",
         elif _api_key("mistral"):
             name = "mistral"
         else:
-            name = "gemini"   # let it raise the clear no-key error
-    return _provider(name).generate(messages, model, temperature)
+            name = "gemini"
+
+    tried = [name]
+    backup = "mistral" if name == "gemini" else "gemini"
+    if not _api_key(backup):
+        backup = None
+
+    last_error = ""
+    for candidate in tried + ([backup] if backup else []):
+        try:
+            out = _provider(candidate).generate(messages, model, temperature)
+            _log(candidate, True, f"{len(out)} chars")
+            return out
+        except Exception as e:
+            last_error = str(e)[:200]
+            _log(candidate, False, last_error)
+    raise RuntimeError(
+        "no LLM provider answered"
+        + (f" (last error: {last_error})" if last_error else "")
+    )
 
 
 def stream(messages: list[dict], model: str = "",
@@ -249,7 +280,44 @@ def stream(messages: list[dict], model: str = "",
             name = "mistral"
         else:
             name = "gemini"
-    return _provider(name).stream(messages, model, temperature)
+
+    backup = "mistral" if name == "gemini" else "gemini"
+    if not _api_key(backup):
+        backup = None
+
+    last_error = ""
+    for candidate in [name] + ([backup] if backup else []):
+        try:
+            chunks = list(_provider(candidate).stream(messages, model, temperature))
+            _log(candidate, True, f"{len(chunks)} chunks")
+            yield from chunks
+            return
+        except Exception as e:
+            last_error = str(e)[:200]
+            _log(candidate, False, last_error)
+    raise RuntimeError(
+        "no LLM provider answered"
+        + (f" (last error: {last_error})" if last_error else "")
+    )
+
+
+def last_provider() -> str | None:
+    """Name of the provider that answered the most recent call, if any."""
+    return _LAST_USED
+
+
+def check_configured() -> tuple[bool, str]:
+    """Startup health check: is at least one LLM key configured?"""
+    have_gemini = bool(_api_key("gemini"))
+    have_mistral = bool(_api_key("mistral"))
+    if have_gemini and have_mistral:
+        return True, "gemini + mistral configured"
+    if have_gemini:
+        return True, "gemini configured (mistral as backup)"
+    if have_mistral:
+        return True, "mistral configured (gemini as backup)"
+    return False, ("no LLM key configured — add gemini_api_key and/or "
+                   "mistral_api_key to config/api_keys.json")
 
 
 def demo() -> None:
