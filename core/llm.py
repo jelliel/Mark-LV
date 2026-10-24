@@ -6,7 +6,8 @@ LLMProvider   — generate(messages, model, temperature) -> str
 GeminiProvider — wraps core/gemini.py's measured ladder (no new client).
 MistralProvider — stdlib urllib caller for
                   https://api.mistral.ai/v1/chat/completions (no SDK, no new
-                  dependency).
+                  dependency) with its own measured model ladder and per-model
+                  cooldowns.
 
 generate() / stream() below route to the provider named in
 config/api_keys.json ("llm_provider": "gemini" | "mistral" | "auto"),
@@ -20,6 +21,8 @@ from __future__ import annotations
 
 import json
 import sys
+import time
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -32,6 +35,89 @@ _KEY_FILE = _BASE / "config" / "api_keys.json"
 
 _MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
 _REQUEST_TIMEOUT_S = 60
+
+
+# ── Mistral model ladder, tiered ────────────────────────────────────────────
+# Same measured-ladder pattern as core/gemini.py: fastest first, strongest last.
+# A rung that errors is cooldowned (300s for quota, 30min for unavailable) and
+# skipped on the next attempt. Two tiers match gemini.FAST / gemini.SMART so
+# the caller picks the right strength for the job.
+#
+# Free-tier models only (no paywall surprises):
+#   fast — short classification, extraction, one-line decisions
+#   smart — reasoning, generation, long documents
+#
+# Cooldown maps to real Mistral behavior: 429 = quota exhausted, 503 = overloaded.
+
+_FAST_MODELS = (
+    "mistral-nemo",           # best free-tier speed/power balance (2024)
+    "mistral-small-latest",   # small, fast, reliable
+    "mistral-embed",          # embedding-only; kept as last-resort placeholder
+)
+_SMART_MODELS = (
+    "mistral-large-latest",   # strongest free-tier (2024)
+    "mistral-nemo",           # high-performing middle ground
+    "mistral-small-latest",   # fallback when the big one is busy
+)
+
+
+def _tier(tier: str) -> tuple[str, ...]:
+    """Return the model ladder for a tier string."""
+    t = str(tier).lower()
+    if t == "fast":
+        return _FAST_MODELS
+    return _SMART_MODELS
+
+
+# ── Cooldown tracking for failed Mistral models ─────────────────────────────
+_cooldown: dict[str, float] = {}
+_cooldown_lock = threading.Lock()
+_COOLDOWN_QUOTA_S = 300
+_COOLDOWN_BUSY_S = 1800
+_GONE_S = 6 * 3600
+
+
+def _is_quota_error(err: str) -> bool:
+    low = err.lower()
+    return "429" in err or "resource_exhausted" in low or "rate_limit" in low
+
+
+def _is_busy_error(err: str) -> bool:
+    low = err.lower()
+    return ("503" in err or "unavailable" in low
+            or "overloaded" in low or "deadline_exceeded" in low)
+
+
+def _is_gone_error(err: str) -> bool:
+    low = err.lower()
+    return "404" in err or "not found" in low or "does not exist" in low
+
+
+def _cool(model: str, seconds: float) -> None:
+    with _cooldown_lock:
+        _cooldown[model] = time.monotonic() + seconds
+
+
+def _cooling(model: str) -> bool:
+    with _cooldown_lock:
+        until = _cooldown.get(model)
+        if until and time.monotonic() < until:
+            return True
+        _cooldown.pop(model, None)
+        return False
+
+
+def _record_mistral_failure(model: str, err: Exception) -> None:
+    msg = str(err)
+    if _is_quota_error(msg):
+        _cool(model, _COOLDOWN_QUOTA_S)
+        print(f"[Mistral] {model}: out of quota — cooling {_COOLDOWN_QUOTA_S // 60}min")
+    elif _is_gone_error(msg):
+        _cool(model, _GONE_S)
+        print(f"[Mistral] {model}: unavailable — set aside")
+    elif _is_busy_error(msg):
+        _cool(model, _COOLDOWN_BUSY_S)
+        print(f"[Mistral] {model}: busy — cooling {_COOLDOWN_BUSY_S // 60}min")
 
 
 class LLMProvider:
