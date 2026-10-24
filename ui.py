@@ -2967,6 +2967,8 @@ class MainWindow(QMainWindow):
     _quiz_hide_sig  = pyqtSignal()
     _review_sig     = pyqtSignal(str, str, object, object)  # document review payload
     _brain_panel_sig = pyqtSignal(dict)  # brain panel data
+    _radar_fire_sig = pyqtSignal(str)  # agent starts processing
+    _radar_stop_sig = pyqtSignal(str)  # agent finishes processing
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -3252,6 +3254,8 @@ class MainWindow(QMainWindow):
         self._quiz_hide_sig.connect(self._hide_quiz)
         self._review_sig.connect(self._show_review)
         self._brain_panel_sig.connect(self._show_brain_panel)
+        self._radar_fire_sig.connect(self._on_radar_fire)
+        self._radar_stop_sig.connect(self._on_radar_stop)
         self._brain_panel: BrainPanel | None = None  # in-app second-brain dashboard
         self._cam_stop = threading.Event()
 
@@ -4792,6 +4796,22 @@ class MainWindow(QMainWindow):
             self._brain_panel.deleteLater()
             self._brain_panel = None
 
+    def _on_radar_fire(self, agent_name: str) -> None:
+        """Thread-safe: fire the radar when an agent starts processing."""
+        if self._brain_panel is not None:
+            try:
+                self._brain_panel._radar_canvas.fire(agent_name)
+            except Exception:
+                pass
+
+    def _on_radar_stop(self, agent_name: str) -> None:
+        """Thread-safe: stop the radar when an agent finishes processing."""
+        if self._brain_panel is not None:
+            try:
+                self._brain_panel._radar_canvas.stop(agent_name)
+            except Exception:
+                pass
+
     def _reposition_brain_panel(self):
         if self._brain_panel is None or not self._brain_panel.isVisible():
             return
@@ -5826,6 +5846,14 @@ class JarvisUI:
     def write_log(self, text: str):
         self._win._log_sig.emit(text)
 
+    def radar_fire(self, agent_name: str):
+        """Thread-safe: fire the radar for an agent start."""
+        self._win._radar_fire_sig.emit(agent_name)
+
+    def radar_stop(self, agent_name: str):
+        """Thread-safe: stop the radar for an agent end."""
+        self._win._radar_stop_sig.emit(agent_name)
+
     def wait_for_api_key(self):
         while not self._win._ready:
             time.sleep(0.1)
@@ -6020,47 +6048,165 @@ class BrainPanel(QWidget):
         """Called from main thread after brain_panel runs."""
         self._data = data
         self._vault_info.set_data(data)
+        self._radar_canvas.set_data(data)
 
 
 class RadarCanvas(QFrame):
-    """Animated radar with concentric circles and sweep — pure paintEvent."""
+    """Living Mind radar — shows agent activity in real time.
+
+    Inspired by the "living mind" vision: a central core (Theologicus),
+    agent nodes orbiting at fixed positions, and animated pulses when
+    an agent is processing a file. Pure paintEvent, no WebGL needed.
+    """
+
+    # One colour per agent slot; colours rotate for each new agent.
+    _AGENT_COLORS = [
+        "#00ff41",   # green
+        "#ff2a2a",   # red
+        "#00f0ff",   # cyan
+        "#ffaa00",   # amber
+        "#a78bfa",   # violet
+        "#e88fb3",   # rose
+        "#67e8f9",   # light cyan
+        "#f5a524",   # orange
+    ]
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(200)
+        self.setMinimumHeight(280)
         self._phase = 0.0
+        # {agent_name: {"active": bool, "pulse_t": float}}
+        self._agents: dict[str, dict] = {}
+        # pulses: list of (t, from_angle, to_angle, color)
+        self._pulses: list[tuple[float, float, float, str]] = []
 
-    def paintEvent(self, event):
+    def fire(self, agent: str, color: str | None = None):
+        """Called when an agent starts/stops processing. The caller passes
+        the agent name and whether it is currently active."""
+        c = color or self._agent_color(agent)
+        if agent not in self._agents:
+            self._agents[agent] = {"active": False, "pulse_t": 0.0}
+        self._agents[agent]["active"] = True
+        # add a pulse from core outward
+        angle = self._agent_angle(agent)
+        self._pulses.append((0.0, angle, angle, c))
+        self.update()
+
+    def stop(self, agent: str):
+        """Called when an agent finishes processing."""
+        if agent in self._agents:
+            self._agents[agent]["active"] = False
+            angle = self._agent_angle(agent)
+            # inward pulse
+            self._pulses.append((0.0, angle, angle, _BRAIN_CYAN))
+        self.update()
+
+    def set_data(self, data: dict):
+        """Pre-populate with known agent profiles (names + colors)."""
+        for p in data.get("profiles", []):
+            if p not in self._agents:
+                self._agents[p] = {"active": False, "pulse_t": 0.0}
+        self.update()
+
+    # ── private helpers ──────────────────────────────────────────────────────
+
+    def _agent_color(self, name: str) -> str:
+        idx = hash(name) % len(self._AGENT_COLORS)
+        return self._AGENT_COLORS[idx]
+
+    def _agent_angle(self, name: str) -> float:
+        """Deterministic angular position for an agent, evenly spaced."""
+        names = sorted(self._agents.keys())
+        if name not in names:
+            return 0.0
+        i = names.index(name)
+        return (i / max(len(names), 1)) * 2 * math.pi - math.pi / 2
+
+    def _paint(self, event):
         from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
-        from PyQt6.QtCore import Qt
+        from PyQt6.QtCore import Qt, QRect
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.fillRect(event.rect(), QColor(_BRAIN_BG))
         w, h = self.width(), self.height()
         cx, cy = w // 2, h // 2
-        r = min(cx, cy) - 10
-        p.setPen(QPen(QColor(_BRAIN_CYAN), 1, Qt.PenStyle.DashLine))
-        p.drawEllipse(cx, cy, r * 2, r * 2)
-        _semi = QColor(_BRAIN_CYAN); _semi.setAlpha(80)
-        p.setPen(QPen(_semi, 1))
-        p.drawEllipse(cx, cy, int(r * 0.75) * 2, int(r * 0.75) * 2)
-        p.drawEllipse(cx, cy, int(r * 0.5) * 2, int(r * 0.5) * 2)
-        p.drawEllipse(cx, cy, int(r * 0.25) * 2, int(r * 0.25) * 2)
-        # Sweep
-        import math
+        r = min(cx, cy) - 16
+
+        # ── concentric rings ───────────────────────────────────────────────
+        for frac, alpha in ((1.0, 60), (0.72, 45), (0.45, 30), (0.2, 20)):
+            col = QColor(_BRAIN_CYAN); col.setAlpha(alpha)
+            p.setPen(QPen(col, 1, Qt.PenStyle.DashLine))
+            pr = int(r * frac)
+            p.drawEllipse(cx, cy, pr * 2, pr * 2)
+
+        # ── sweep line ─────────────────────────────────────────────────────
         angle = math.radians(self._phase)
-        end_x = cx + r * math.cos(angle)
-        end_y = cy + r * math.sin(angle)
-        _sweep = QColor(_BRAIN_CYAN); _sweep.setAlpha(120)
-        p.setPen(QPen(_sweep, 1))
-        p.drawLine(cx, cy, int(end_x), int(end_y))
-        # Core text
+        ex = cx + r * math.cos(angle)
+        ey = cy + r * math.sin(angle)
+        sweep = QColor(_BRAIN_CYAN); sweep.setAlpha(100)
+        p.setPen(QPen(sweep, 1))
+        p.drawLine(cx, cy, int(ex), int(ey))
+
+        # ── active agent nodes ─────────────────────────────────────────────
+        for name, state in sorted(self._agents.items()):
+            ang = self._agent_angle(name)
+            # radial distance: active = near outer ring, idle = middle ring
+            dist_frac = 0.85 if state["active"] else 0.55
+            nr = int(r * dist_frac)
+            nx = int(cx + nr * math.cos(ang))
+            ny = int(cy + nr * math.sin(ang))
+            col = QColor(self._agent_color(name))
+
+            # glow halo when active
+            if state["active"]:
+                halo = QColor(col); halo.setAlpha(40)
+                p.setPen(QPen(halo, 4))
+                p.setBrush(halo)
+                p.drawEllipse(nx, ny, 14, 14)
+            col.setAlpha(255 if state["active"] else 100)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(col)
+            p.drawEllipse(nx - 4, ny - 4, 8, 8)
+
+            # label below dot
+            p.setPen(col)
+            p.setFont(QFont(_FONT_H, 7))
+            p.drawText(QRect(nx - 30, ny + 6, 60, 12),
+                       Qt.AlignmentFlag.AlignCenter, name[:16])
+
+        # ── travel pulses ──────────────────────────────────────────────────
+        import time as _t
+        now = _t.monotonic()
+        alive = []
+        for pt, fa, ta, pc in self._pulses:
+            elapsed = now - pt
+            if elapsed > 1.2:
+                continue
+            t = elapsed / 1.2  # 0→1
+            # interpolate between core (r*0.15) and agent ring (r*0.85)
+            inner_r = int(r * 0.15)
+            outer_r = int(r * 0.85)
+            cr = int(inner_r + (outer_r - inner_r) * t)
+            px = cx + cr * math.cos(fa)
+            py = cy + cr * math.sin(fa)
+            pulse_c = QColor(pc); pulse_c.setAlpha(int(200 * (1 - t)))
+            p.setPen(QPen(pulse_c, 2))
+            p.setBrush(pulse_c)
+            p.drawEllipse(int(px) - 3, int(py) - 3, 6, 6)
+            alive.append((pt, fa, ta, pc))
+        self._pulses = alive
+
+        # ── core text ──────────────────────────────────────────────────────
         p.setPen(QColor(_BRAIN_CYAN))
         p.setFont(QFont(_FONT_H, 10, QFont.Weight.Bold))
-        p.drawText(QRect(cx - 50, cy - 10, 100, 20),
+        p.drawText(QRect(cx - 55, cy - 12, 110, 24),
                    Qt.AlignmentFlag.AlignCenter, "THEOLOGICUS")
         p.end()
-        self._phase = (self._phase + 2) % 360
+        self._phase = (self._phase + 1.5) % 360
+        self.update()   # keep animating
+
+    def paintEvent(self, event):
+        self._paint(event)
 
 
 class VaultInfoPanel(QFrame):
