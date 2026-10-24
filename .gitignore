@@ -27,6 +27,8 @@ config/whatsapp_web/
 .env
 .env.*
 # your Gemini API key, plus per-plugin credentials
+dashboard/static/theologicus_generated.html
+dashboard/static/vault_state.json
 # the dashboard's TLS private key and certificate
 # a LINKED WhatsApp session — committing it hands somebody your WhatsApp
 # account, not just a key
