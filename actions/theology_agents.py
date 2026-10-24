@@ -451,3 +451,57 @@ def learn_with_agents(paths, profiles, player=None, step=None) -> str:
     if self_doc:
         summary += f" Self-knowledge mise à jour ({self_doc}) ; {mirror}."
     return summary
+
+
+def check_drift(bridge, profiles) -> list[str]:
+    """Check for drift in the self-knowledge document.
+
+    Returns a list of drift findings: dead references, missing agents,
+    stale data, etc. Empty list means everything is aligned.
+    """
+    findings: list[str] = []
+    try:
+        vault = bridge._vault()
+        doc = vault / _SELF_DOC
+
+        if not doc.exists():
+            return ["Self-knowledge doc missing — run refresh_self_knowledge()"]
+
+        content = doc.read_text(encoding="utf-8", errors="replace")
+
+        # Check for dead [[page]] references
+        import re
+        links = re.findall(r"\[\[([^\]]+)\]\]", content)
+        known_pages = set()
+        for dirname, path in bridge._iter_pages(vault):
+            known_pages.add(dirname)
+            known_pages.add(path.stem)
+        for link in links:
+            if link not in known_pages and not any(l in link for l in ("http", "https", "mailto")):
+                findings.append(f"Dead reference [[{link}]]")
+
+        # Check for ghost agent names (mentioned but not in profiles)
+        agent_names = {p.name.lower() for p in profiles}
+        mentioned = re.findall(r"\*\*([^*]+?)\*\*", content)
+        for name in mentioned:
+            if name.lower() not in agent_names and "agent" not in name.lower():
+                findings.append(f"Unknown agent mentioned: {name}")
+
+        # Check page counts match
+        try:
+            current_counts = {}
+            for dirname, path in bridge._iter_pages(vault):
+                current_counts[dirname] = current_counts.get(dirname, 0) + 1
+            summary_match = re.search(r"(\d+) page\(s\)", content)
+            if summary_match:
+                reported = int(summary_match.group(1))
+                actual = sum(current_counts.values())
+                if reported != actual:
+                    findings.append(f"Page count mismatch: doc says {reported}, vault has {actual}")
+        except Exception as e:
+            findings.append(f"Count check failed: {e}")
+
+    except Exception as e:
+        findings.append(f"Drift check error: {e}")
+
+    return findings
