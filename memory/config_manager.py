@@ -46,6 +46,27 @@ def load_api_keys() -> dict:
 def get_gemini_key() -> str | None:
     return load_api_keys().get("gemini_api_key")
 
+def save_gemini_key(key: str) -> None:
+    _patch_config(gemini_api_key=key.strip())
+
+
+def get_mistral_key() -> str | None:
+    return load_api_keys().get("mistral_api_key")
+
+
+def save_mistral_key(key: str) -> None:
+    _patch_config(mistral_api_key=key.strip())
+
+
+def get_llm_provider() -> str:
+    """Configured text-generation provider: "gemini", "mistral", or "auto"."""
+    return str(load_api_keys().get("llm_provider", "auto")).lower()
+
+
+def save_llm_provider(provider: str) -> None:
+    _patch_config(llm_provider=provider.strip().lower())
+
+
 def is_configured() -> bool:
     key = get_gemini_key()
     return bool(key and len(key) > 15)
