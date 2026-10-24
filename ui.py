@@ -6226,7 +6226,8 @@ class RadarCanvas(QFrame):
         r = min(cx, cy) - 10
         p.setPen(QPen(QColor(_BRAIN_CYAN), 1, Qt.PenStyle.DashLine))
         p.drawEllipse(cx, cy, r * 2, r * 2)
-        p.setPen(QPen(QColor(_BRAIN_CYAN, 80), 1))
+        _semi = QColor(_BRAIN_CYAN); _semi.setAlpha(80)
+        p.setPen(QPen(_semi, 1))
         p.drawEllipse(cx, cy, int(r * 0.75) * 2, int(r * 0.75) * 2)
         p.drawEllipse(cx, cy, int(r * 0.5) * 2, int(r * 0.5) * 2)
         p.drawEllipse(cx, cy, int(r * 0.25) * 2, int(r * 0.25) * 2)
@@ -6235,7 +6236,8 @@ class RadarCanvas(QFrame):
         angle = math.radians(self._phase)
         end_x = cx + r * math.cos(angle)
         end_y = cy + r * math.sin(angle)
-        p.setPen(QPen(QColor(_BRAIN_CYAN, 120), 1))
+        _sweep = QColor(_BRAIN_CYAN); _sweep.setAlpha(120)
+        p.setPen(QPen(_sweep, 1))
         p.drawLine(cx, cy, int(end_x), int(end_y))
         # Core text
         p.setPen(QColor(_BRAIN_CYAN))
