@@ -5946,7 +5946,6 @@ class BrainPanel(QWidget):
             BrainPanel {{ background: {_BRAIN_BG}; }}
         """)
         self._data: dict = {}
-        self._ticker: int = 0  # for simulated metric drift
 
         # ── layout ──────────────────────────────────────────────────────────
         lay = QVBoxLayout(self)
@@ -5990,211 +5989,30 @@ class BrainPanel(QWidget):
         sep.setStyleSheet(f"background: {_BRAIN_BRD};")
         lay.addWidget(sep)
 
-        # Body: 3 columns
-        body = QHBoxLayout()
-        body.setContentsMargins(8, 8, 8, 8)
-        body.setSpacing(8)
-
-        # Left col: sys monitor
-        left = self._build_left_col()
-        body.addWidget(left, stretch=1)
-
-        # Centre: radar (top) + vault info (bottom)
-        centre = QWidget()
-        c_lay = QVBoxLayout(centre)
-        c_lay.setContentsMargins(0, 0, 0, 0)
-        c_lay.setSpacing(6)
+        # Body: radar + vault info only
         self._radar_canvas = RadarCanvas(self)
         self._radar_canvas.setMinimumHeight(280)
         self._radar_canvas.setFixedHeight(340)
-        c_lay.addWidget(self._radar_canvas)
-        # Vault info as text below radar
+        lay.addWidget(self._radar_canvas)
         self._vault_info = VaultInfoPanel()
-        c_lay.addWidget(self._vault_info)
-        c_lay.addStretch()
-        body.addWidget(centre, stretch=2)
-
-        # Right col: log + agents + input
-        right = self._build_right_col()
-        body.addWidget(right, stretch=1)
-
-        lay.addLayout(body)
+        lay.addWidget(self._vault_info)
+        lay.addStretch()
 
         # Footer
-        ftr = QLabel("  [F4] Mute  •  Theologicus Brain Panel  ")
+        ftr = QLabel("  Theologicus Brain Panel  ")
         ftr.setFont(QFont(_FONT_H, 7))
         ftr.setStyleSheet(f"color: {_BRAIN_DIM}; background: transparent;")
         lay.addWidget(ftr)
 
-        # Tick timer for simulated metrics
+        # Clock ticker
         self._tick_tmr = QTimer(self)
         self._tick_tmr.timeout.connect(self._tick)
-        self._tick_tmr.start(1500)
+        self._tick_tmr.start(1000)
         self._tick()
 
-    def _build_left_col(self) -> QWidget:
-        w = QWidget()
-        w.setStyleSheet(f"background: rgba(1,13,20,0.8);")
-        lay = QVBoxLayout(w)
-        lay.setContentsMargins(8, 6, 8, 6)
-        lay.setSpacing(4)
-
-        def _sec(txt: str):
-            l = QLabel(f"  {txt}")
-            l.setFont(QFont(_FONT_H, 8, QFont.Weight.Bold))
-            l.setStyleSheet(f"color: {_BRAIN_CYAN}; background: transparent;")
-            return l
-
-        def _row(label: str, value_widget) -> QWidget:
-            row = QHBoxLayout(); row.setSpacing(4)
-            lbl = QLabel(label); lbl.setFont(QFont(_FONT_H, 9))
-            lbl.setStyleSheet(f"color: {_BRAIN_TXT}; background: transparent;")
-            row.addWidget(lbl)
-            row.addStretch()
-            row.addWidget(value_widget)
-            p = QWidget(); p.setLayout(row); p.setStyleSheet("background: transparent;")
-            return p
-
-        lay.addWidget(_sec("SYS MONITOR"))
-        self._cpu_lbl = QLabel("45%")
-        self._cpu_lbl.setFont(QFont(_FONT_H, 10, QFont.Weight.Bold))
-        self._cpu_lbl.setStyleSheet(f"color: {_BRAIN_CYAN}; background: transparent;")
-        lay.addWidget(_row("CPU", self._cpu_lbl))
-        self._cpu_bar = QFrame()
-        self._cpu_bar.setFixedHeight(5)
-        self._cpu_bar.setFixedWidth(60)
-        self._cpu_bar.setStyleSheet(f"background: {_BRAIN_CYAN}; border-radius: 3px;")
-        lay.addWidget(self._cpu_bar)
-
-        self._mem_lbl = QLabel("42%")
-        self._mem_lbl.setFont(QFont(_FONT_H, 10, QFont.Weight.Bold))
-        self._mem_lbl.setStyleSheet(f"color: #ffaa00; background: transparent;")
-        lay.addWidget(_row("MEM", self._mem_lbl))
-        self._mem_bar = QFrame(); self._mem_bar.setFixedHeight(5); self._mem_bar.setFixedWidth(60)
-        self._mem_bar.setStyleSheet(f"background: #ffaa00; border-radius: 3px;")
-        lay.addWidget(self._mem_bar)
-
-        self._net_lbl = QLabel("— KB/s")
-        self._net_lbl.setFont(QFont(_FONT_H, 9))
-        self._net_lbl.setStyleSheet(f"color: {_BRAIN_CYAN}; background: transparent;")
-        lay.addWidget(_row("NET", self._net_lbl))
-
-        lay.addSpacing(8)
-        self._uptime_lbl = QLabel("UP  --:--")
-        self._uptime_lbl.setFont(QFont(_FONT_H, 9, QFont.Weight.Bold))
-        self._uptime_lbl.setStyleSheet(f"color: {_BRAIN_GRN}; background: transparent;")
-        lay.addWidget(self._uptime_lbl)
-        self._proc_lbl = QLabel("PROC  --")
-        self._proc_lbl.setFont(QFont(_FONT_H, 9))
-        self._proc_lbl.setStyleSheet(f"color: {_BRAIN_TXT}; background: transparent;")
-        lay.addWidget(self._proc_lbl)
-        self._os_lbl = QLabel("OS  WIN")
-        self._os_lbl.setFont(QFont(_FONT_H, 9))
-        self._os_lbl.setStyleSheet(f"color: #ffcc00; background: transparent;")
-        lay.addWidget(self._os_lbl)
-        return w
-
-    def _build_right_col(self) -> QWidget:
-        w = QWidget()
-        w.setStyleSheet(f"background: rgba(1,13,20,0.8);")
-        lay = QVBoxLayout(w)
-        lay.setContentsMargins(8, 6, 8, 6)
-        lay.setSpacing(4)
-
-        def _sec(txt: str):
-            l = QLabel(f"  {txt}")
-            l.setFont(QFont(_FONT_H, 8, QFont.Weight.Bold))
-            l.setStyleSheet(f"color: {_BRAIN_CYAN}; background: transparent;")
-            return l
-
-        # Activity log
-        lay.addWidget(_sec("ACTIVITY LOG"))
-        self._log_box = QTextEdit()
-        self._log_box.setReadOnly(True)
-        self._log_box.setFont(QFont(_FONT_H, 8))
-        self._log_box.setMaximumHeight(140)
-        self._log_box.setStyleSheet(f"""
-            QTextEdit {{ background: #050a0f; color: {_BRAIN_TXT};
-                padding: 4px; }}
-        """)
-        lay.addWidget(self._log_box)
-
-        # Agents
-        lay.addWidget(_sec("VAULT AGENTS"))
-        self._agents_box = QTextEdit()
-        self._agents_box.setReadOnly(True)
-        self._agents_box.setFont(QFont(_FONT_H, 7))
-        self._agents_box.setMaximumHeight(100)
-        self._agents_box.setStyleSheet(f"""
-            QTextEdit {{ background: #050a0f; color: {_BRAIN_TXT};
-                padding: 4px; }}
-        """)
-        lay.addWidget(self._agents_box)
-
-        # Input area
-        lay.addWidget(_sec("COMMAND INPUT"))
-        inp_row = QHBoxLayout(); inp_row.setSpacing(4)
-        self._cmd_input = QLineEdit()
-        self._cmd_input.setPlaceholderText("Type a command…")
-        self._cmd_input.setFont(QFont(_FONT_H, 9))
-        self._cmd_input.setStyleSheet(f"""
-            QLineEdit {{ background: #050a0f; color: {_BRAIN_TXT};
-                padding: 4px 6px; }}
-            QLineEdit:focus {{ border-color: {_BRAIN_CYAN}; }}
-        """)
-        inp_row.addWidget(self._cmd_input)
-        self._cmd_btn = QPushButton("▶")
-        self._cmd_btn.setFixedSize(32, 26)
-        self._cmd_btn.setFont(QFont(_FONT_H, 10, QFont.Weight.Bold))
-        self._cmd_btn.setStyleSheet(f"""
-            QPushButton {{ background: rgba(0,240,255,0.15); color: {_BRAIN_CYAN};
-                border: 1px solid {_BRAIN_CYAN}; border-radius: 3px; }}
-        """)
-        self._cmd_btn.clicked.connect(self._on_cmd)
-        inp_row.addWidget(self._cmd_btn)
-        lay.addLayout(inp_row)
-        self._cmd_input.returnPressed.connect(self._on_cmd)
-
-        self._mic_btn = QPushButton("🎤  MICROPHONE ACTIVE")
-        self._mic_btn.setFixedHeight(28)
-        self._mic_btn.setFont(QFont(_FONT_H, 8, QFont.Weight.Bold))
-        self._mic_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._mic_btn.setStyleSheet(f"""
-            QPushButton {{ background: rgba(0,255,65,0.1); color: {_BRAIN_GRN};
-                border: 1px solid {_BRAIN_GRN}; border-radius: 3px; }}
-            QPushButton:hover {{ background: rgba(0,255,65,0.2); }}
-        """)
-        self._mic_btn.clicked.connect(lambda: self._add_log("sys", "Microphone activé"))
-        lay.addWidget(self._mic_btn)
-
-        return w
-
-    def _on_cmd(self):
-        cmd = self._cmd_input.text().strip()
-        if cmd:
-            self._add_log("user", cmd)
-            self._add_log("sys", f"Commande reçue : {cmd}")
-            self._cmd_input.clear()
-
-    def _add_log(self, kind: str, text: str):
-        col = _BRAIN_CYAN if kind == "user" else _BRAIN_GRN
-        esc = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        html = f'<span style="color:{col}; font-weight:bold;">{kind.upper()}:</span> {esc}'
-        self._log_box.append(html)
-        self._log_box.verticalScrollBar().setValue(
-            self._log_box.verticalScrollBar().maximum())
-
     def _tick(self):
-        self._ticker += 1
         import time as _t
         self._clock_lbl.setText(_t.strftime("%H:%M:%S"))
-        cpu = 30 + (self._ticker * 7 % 30)
-        mem = 38 + (self._ticker * 3 % 15)
-        self._cpu_lbl.setText(f"{cpu}%")
-        self._cpu_bar.setFixedWidth(max(4, int(cpu * 1.2)))
-        self._mem_lbl.setText(f"{mem}%")
-        self._mem_bar.setFixedWidth(max(4, int(mem * 1.2)))
-        self._net_lbl.setText(f"{20 + (self._ticker % 80)} KB/s")
         self._radar_canvas.update()
         self._tick_tmr.start(1000)
 
@@ -6202,12 +6020,6 @@ class BrainPanel(QWidget):
         """Called from main thread after brain_panel runs."""
         self._data = data
         self._vault_info.set_data(data)
-        profiles = data.get("profiles", [])
-        contrib = data.get("contributions", {})
-        agent_lines = "\n".join(
-            f"• {p} — {contrib.get(p, 0)} page(s)" for p in profiles[:20])
-        self._agents_box.setPlainText(agent_lines or "Aucun agent trouvé")
-        self._add_log("sys", f"Vault chargé: {data.get('total', 0)} page(s), {data.get('n_raw', 0)} raw")
 
 
 class RadarCanvas(QFrame):
