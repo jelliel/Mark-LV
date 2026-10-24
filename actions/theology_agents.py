@@ -333,8 +333,21 @@ def learn_with_agents(paths, profiles, player=None, step=None) -> str:
                     step(done, total_units, f"{agent.name} — {path.name} — structuration")
                 except Exception:
                     pass
-            data = fp._theology_structure(text, path.name, persona=agent,
-                                          vault_context=vault_context)
+            # Living Mind radar: light up the agent while it works.
+            if player:
+                try:
+                    player.radar_fire(agent.name)
+                except Exception:
+                    pass
+            try:
+                data = fp._theology_structure(text, path.name, persona=agent,
+                                              vault_context=vault_context)
+            finally:
+                if player:
+                    try:
+                        player.radar_stop(agent.name)
+                    except Exception:
+                        pass
             written = 0
             if isinstance(data, dict) and data:
                 src = data.get("source")
