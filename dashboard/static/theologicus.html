@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Theologicus AI Interface</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #050a0f;
+            --panel-bg: rgba(0, 20, 30, 0.6);
+            --border-color: #1a4f5e;
+            --primary-cyan: #00f0ff;
+            --primary-green: #00ff41;
+            --alert-red: #ff2a2a;
+            --text-main: #a0c0d0;
+            --font-display: 'Orbitron', sans-serif;
+            --font-mono: 'Share Tech Mono', monospace;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: var(--font-mono);
+            height: 100vh;
+            overflow: hidden;
+            display: grid;
+            grid-template-rows: 60px 1fr 30px;
+            grid-template-columns: 280px 1fr 340px;
+            gap: 10px;
+            padding: 10px;
+            background-image: radial-gradient(circle at 50% 50%, #0a1b24 0%, #000000 100%);
+        }
+        header {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 20px;
+            background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.1), transparent);
+        }
+        .logo { font-family: var(--font-display); font-size: 24px; color: var(--primary-cyan); text-shadow: 0 0 10px var(--primary-cyan); letter-spacing: 2px; }
+        .clock { font-size: 18px; text-align: right; color: var(--primary-cyan); }
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            backdrop-filter: blur(5px);
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
+        }
+        .panel-header {
+            font-size: 12px; color: var(--primary-cyan);
+            margin-bottom: 10px; border-bottom: 1px solid var(--border-color);
+            padding-bottom: 5px; display: flex;
+            justify-content: space-between; text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .left-col { display: flex; flex-direction: column; gap: 10px; }
+        .stat-row { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 8px; }
+        .stat-value { color: var(--primary-cyan); }
+        .progress-bar { width: 100%; height: 6px; background: #0f2a33; margin-bottom: 12px; border-radius: 3px; overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--primary-cyan); box-shadow: 0 0 10px var(--primary-cyan); width: 45%; }
+        .bottom-buttons { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+        .btn {
+            background: transparent; border: 1px solid var(--border-color);
+            color: var(--primary-cyan); padding: 8px; font-family: var(--font-mono);
+            font-size: 12px; cursor: pointer; text-transform: uppercase;
+            transition: all 0.3s ease;
+        }
+        .btn:hover { background: rgba(0, 240, 255, 0.1); box-shadow: 0 0 10px rgba(0, 240, 255, 0.3); }
+        .center-col { display: flex; justify-content: center; align-items: center; position: relative; }
+        .radar-container { position: relative; width: 500px; height: 500px; display: flex; justify-content: center; align-items: center; }
+        .circle { position: absolute; border-radius: 50%; border: 1px solid rgba(0, 240, 255, 0.2); }
+        .c1 { width: 100%; height: 100%; border: 1px dashed rgba(0, 240, 255, 0.1); animation: spin 60s linear infinite; }
+        .c2 { width: 80%; height: 80%; border: 2px solid rgba(0, 240, 255, 0.3); border-left-color: transparent; border-bottom-color: transparent; animation: spin 10s linear infinite reverse; }
+        .c3 { width: 60%; height: 60%; border: 1px solid rgba(0, 240, 255, 0.4); }
+        .c4 { width: 40%; height: 40%; border: 2px solid var(--primary-cyan); box-shadow: 0 0 20px rgba(0, 240, 255, 0.2); }
+        .sweep { position: absolute; width: 100%; height: 100%; border-radius: 50%; background: conic-gradient(from 0deg, transparent 0%, rgba(0, 240, 255, 0.1) 20%, transparent 40%); animation: spin 4s linear infinite; }
+        .core-text { position: absolute; font-family: var(--font-display); font-size: 24px; color: #fff; text-shadow: 0 0 15px var(--primary-cyan); z-index: 10; letter-spacing: 4px; }
+        .vault-info {
+            position: absolute; bottom: -100px; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 20, 30, 0.9); border: 1px solid var(--border-color);
+            padding: 15px 25px; border-radius: 4px; font-size: 12px; text-align: center;
+            min-width: 300px;
+        }
+        .vault-info div { margin: 5px 0; color: var(--primary-cyan); }
+        .vault-info .label { color: #666; font-size: 10px; }
+        .listening-status { position: absolute; bottom: -140px; color: var(--primary-green); font-size: 14px; display: flex; align-items: center; gap: 10px; animation: pulse 2s infinite; }
+        .dot { width: 8px; height: 8px; background: var(--primary-green); border-radius: 50%; box-shadow: 0 0 10px var(--primary-green); }
+        .right-col { display: flex; flex-direction: column; gap: 10px; }
+        .chat-log { flex: 1; overflow-y: auto; font-size: 13px; line-height: 1.5; color: #ccc; }
+        .log-entry { margin-bottom: 8px; }
+        .log-user { color: var(--primary-cyan); font-weight: bold; }
+        .log-sys { color: var(--primary-green); }
+        .file-drop { border: 1px dashed var(--border-color); padding: 20px; text-align: center; color: #556; font-size: 12px; margin-bottom: 10px; cursor: pointer; transition: 0.3s; }
+        .file-drop:hover { border-color: var(--primary-cyan); color: var(--primary-cyan); background: rgba(0, 240, 255, 0.05); }
+        .input-area { display: flex; gap: 5px; }
+        input[type="text"] {
+            flex: 1; background: rgba(0, 0, 0, 0.5); border: 1px solid var(--border-color);
+            padding: 10px; color: white; font-family: var(--font-mono); outline: none;
+        }
+        input[type="text"]:focus { border-color: var(--primary-cyan); box-shadow: 0 0 10px rgba(0, 240, 255, 0.2); }
+        .action-btn {
+            background: rgba(0, 240, 255, 0.1); border: 1px solid var(--primary-cyan);
+            color: var(--primary-cyan); width: 40px; cursor: pointer;
+        }
+        .mic-btn { width: 100%; padding: 15px; margin-top: 10px; background: rgba(0, 255, 65, 0.1); border: 1px solid var(--primary-green); color: var(--primary-green); text-align: center; text-transform: uppercase; font-weight: bold; letter-spacing: 1px; cursor: pointer; transition: 0.3s; }
+        .mic-btn:hover { background: rgba(0, 255, 65, 0.2); box-shadow: 0 0 20px rgba(0, 255, 65, 0.3); }
+        .agents-list { font-size: 11px; line-height: 1.6; max-height: 150px; overflow-y: auto; }
+        .drift-list { font-size: 11px; line-height: 1.6; max-height: 100px; overflow-y: auto; }
+        footer { grid-column: 1 / -1; display: flex; justify-content: space-between; font-size: 10px; color: #444; align-items: center; border-top: 1px solid #1a2a30; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">THEOLOGICUS</div>
+        <div class="clock" id="clock">--:--:--<br><span style="font-size:10px; color:#666;">--/--/----</span></div>
+    </header>
+
+    <!-- COLONNE GAUCHE -->
+    <aside class="left-col">
+        <div class="panel" style="flex: 1;">
+            <div class="panel-header">SYS MONITOR <span>●</span></div>
+            <div class="stat-row"><span>CPU</span> <span class="stat-value" id="cpu-val">—%</span></div>
+            <div class="progress-bar"><div class="progress-fill" id="cpu-bar" style="width: 0%;"></div></div>
+            <div class="stat-row"><span>MEM</span> <span class="stat-value" id="mem-val">—%</span></div>
+            <div class="progress-bar"><div class="progress-fill" id="mem-bar" style="width: 0%; background: #ffaa00; box-shadow: 0 0 10px #ffaa00;"></div></div>
+            <div class="stat-row"><span>NET</span> <span class="stat-value" id="net-val">—</span></div>
+            <div class="stat-row" style="margin-top: 20px;"><span>UPTIME</span> <span class="stat-value" id="uptime-val">—</span></div>
+            <div class="stat-row"><span>PROC</span> <span class="stat-value" id="proc-val">—</span></div>
+            <div class="stat-row"><span>OS</span> <span class="stat-value" id="os-val">—</span></div>
+        </div>
+        <div class="bottom-buttons">
+            <button class="btn" onclick="sendMsg('AI CORE ACTIVE')">AI CORE ACTIVE</button>
+            <button class="btn" onclick="sendMsg('SEC CLEARED')">SEC CLEARED</button>
+            <button class="btn" style="border-color: #666; color: #666;">PROTOCOL V</button>
+        </div>
+    </aside>
+
+    <!-- COLONNE CENTRALE -->
+    <main class="center-col">
+        <div class="radar-container">
+            <div class="circle c1"></div>
+            <div class="circle c2"></div>
+            <div class="circle c3"></div>
+            <div class="circle c4"></div>
+            <div class="sweep"></div>
+            <div class="core-text">THEOLOGICUS</div>
+            <div class="vault-info" id="vault-info">
+                <div class="label">VAULT STATE</div>
+                <div id="vault-total">Chargement...</div>
+                <div id="vault-counts" style="font-size: 10px; color: #666;"></div>
+                <div id="vault-raw" style="font-size: 10px; color: #666;"></div>
+                <div id="vault-doc" style="font-size: 10px; color: #666; margin-top: 8px;"></div>
+                <div id="vault-drift" style="font-size: 10px; margin-top: 8px;"></div>
+            </div>
+            <div class="listening-status">
+                <div class="dot"></div> LISTENING
+            </div>
+        </div>
+    </main>
+
+    <!-- COLONNE DROITE -->
+    <aside class="right-col">
+        <div class="panel" style="flex: 1;">
+            <div class="panel-header">ACTIVITY LOG</div>
+            <div class="chat-log" id="chat-log">
+                <div class="log-entry"><span class="log-sys">SYS:</span> Theologicus initialized.</div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">VAULT AGENTS</div>
+            <div class="agents-list" id="agents-list">
+                <div style="color: #666;">Aucun agent chargé</div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">FILE UPLOAD</div>
+            <div class="file-drop">⬆ Drop File here or Click to Browse</div>
+            <div class="panel-header" style="margin-top: 10px;">COMMAND INPUT</div>
+            <div class="input-area">
+                <input type="text" id="cmd-input" placeholder="Type a command or question...">
+                <button class="action-btn" onclick="sendCommand()">▶</button>
+            </div>
+            <button class="mic-btn" id="mic-btn">🎤 Microphone Active</button>
+        </div>
+    </aside>
+
+    <footer>
+        <div>[F4] Mute • [F11] Fullscreen</div>
+        <div>Theologicus Interface</div>
+    </footer>
+
+    <script>
+        // Vault data will be injected here by brain_panel.py
+        const VAULT_DATA = null;
+
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').innerHTML =
+                now.toLocaleTimeString('fr-FR') + '<br>' +
+                '<span style="font-size:10px; color:#666;">' +
+                now.toLocaleDateString('fr-FR') + '</span>';
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        function renderVaultData(data) {
+            if (!data) return;
+
+            // Update vault info in center
+            document.getElementById('vault-total').textContent = `${data.total} page(s)`;
+
+            const counts = data.counts || {};
+            document.getElementById('vault-counts').innerHTML =
+                `Sources: ${counts.sources || 0} | Entités: ${counts.entities || 0}<br>` +
+                `Concepts: ${counts.concepts || 0} | Synthèses: ${counts.synthesis || 0}`;
+
+            document.getElementById('vault-raw').textContent = `${data.n_raw} source(s) brute(s)`;
+            document.getElementById('vault-doc').textContent = data.doc_state || '';
+
+            // Drift findings
+            const driftEl = document.getElementById('vault-drift');
+            if (data.findings && data.findings.length > 0) {
+                driftEl.innerHTML = '<span style="color: #ff6b6b;">⚠ Dérive (' + data.findings.length + '):</span><br>' +
+                    data.findings.slice(0, 3).map(f => '— ' + f).join('<br>');
+            } else {
+                driftEl.innerHTML = '<span style="color: #00ff41;">✓ Dérive: 0 — Doc aligné</span>';
+            }
+
+            // Update agents list
+            const agentsEl = document.getElementById('agents-list');
+            if (data.profiles && data.profiles.length > 0) {
+                const contrib = data.contributions || {};
+                agentsEl.innerHTML = data.profiles.map(p =>
+                    `<div>• ${p} — ${contrib[p] || 0} page(s)</div>`
+                ).join('');
+            } else {
+                agentsEl.innerHTML = '<div style="color: #666;">Aucun agent trouvé</div>';
+            }
+
+            addLog('sys', `Vault chargé: ${data.total} page(s), ${data.n_raw} raw`);
+        }
+
+        function addLog(type, text) {
+            const log = document.getElementById('chat-log');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<span class="log-${type}">${type.toUpperCase()}:</span> ${text}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function sendCommand() {
+            const inp = document.getElementById('cmd-input');
+            const val = inp.value.trim();
+            if (!val) return;
+            addLog('user', val);
+            addLog('sys', 'Commande reçue, traitement en cours...');
+            inp.value = '';
+        }
+
+        document.getElementById('cmd-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') sendCommand();
+        });
+        document.getElementById('mic-btn').addEventListener('click', function() {
+            addLog('sys', 'Microphone activé');
+        });
+
+        // System metrics
+        function updateMetrics() {
+            const elapsed = Date.now() % 10000 / 100;
+            document.getElementById('cpu-val').textContent = Math.floor(elapsed + Math.random() * 10) + '%';
+            document.getElementById('cpu-bar').style.width = Math.min(100, elapsed + Math.random() * 10) + '%';
+
+            const memUsage = Math.floor(40 + Math.random() * 20);
+            document.getElementById('mem-val').textContent = memUsage + '%';
+            document.getElementById('mem-bar').style.width = memUsage + '%';
+
+            document.getElementById('net-val').textContent = Math.floor(Math.random() * 100) + 'KB/s';
+            document.getElementById('proc-val').textContent = Math.floor(300 + Math.random() * 100);
+        }
+        setInterval(updateMetrics, 2000);
+        updateMetrics();
+
+        // Load vault data if available
+        if (VAULT_DATA) {
+            renderVaultData(VAULT_DATA);
+        }
+    </script>
+</body>
+</html>
