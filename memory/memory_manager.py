@@ -486,6 +486,17 @@ def ensure_theological_dir() -> None:
     """Ensure the theological metadata directory exists."""
     MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+def _jsonify(value):
+    """Make a value JSON-safe: Path -> str, recursion into dict/list/tuple."""
+    from pathlib import Path as _Path
+    if isinstance(value, _Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(k): _jsonify(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonify(v) for v in value]
+    return value
+
 def save_theological_metadata(metadata: dict) -> None:
     """Persist theological metadata to long_term.json for cross-session continuity."""
     ensure_theological_dir()
@@ -493,13 +504,13 @@ def save_theological_metadata(metadata: dict) -> None:
         lt = json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
     except Exception:
         lt = {}
-    lt["theological_metadata"] = metadata
+    lt["theological_metadata"] = _jsonify(metadata)
     q = metadata.get("query", "")
     if q:
-        lt["last_theological_query"] = q[:300]
+        lt["last_theological_query"] = str(q)[:300]
     patterns = metadata.get("patterns", {})
     if patterns:
-        lt.setdefault("theological_patterns", {}).update(patterns)
+        lt.setdefault("theological_patterns", {}).update(_jsonify(patterns))
     MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
     MEMORY_PATH.write_text(
         json.dumps(lt, indent=2, ensure_ascii=False),
