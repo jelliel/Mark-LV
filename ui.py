@@ -6034,22 +6034,6 @@ class BrainPanel(QWidget):
             p = QWidget(); p.setLayout(row); p.setStyleSheet("background: transparent;")
             return p
 
-        def _bar_bar() -> QFrame:
-            f = QFrame(); f.setFixedHeight(5)
-            f.setStyleSheet(f"background: #0a1f27; border-radius: 3px;")
-            return f
-
-        def _fill_bar(target: QLabel) -> QFrame:
-            f = QFrame()
-            f.setFixedHeight(5); f.setFixedWidth(120)
-            f.setStyleSheet(f"background: {_BRAIN_CYAN}; border-radius: 3px;")
-            t = QLabel()
-            t.setFixedWidth(120)
-            t.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            t.setStyleSheet(f"background: transparent; color: {_BRAIN_CYAN}; font-size: 0pt;")
-            # We just use the frame itself as a filled bar via width %
-            return f
-
         lay.addWidget(_sec("SYS MONITOR"))
         self._cpu_lbl = QLabel("45%")
         self._cpu_lbl.setFont(QFont(_FONT_H, 10, QFont.Weight.Bold))
