@@ -54,6 +54,8 @@ from memory.memory_manager import (
     save_session_summary, pop_last_session,
     search_memory, set_trim_notifier,
     get_last_theological_query, get_theological_patterns, save_theological_metadata,
+    save_bibliographic_entry, get_bibliographic_entry, list_bibliographic_entries,
+    register_vault_source,
 )
 from actions.theology_citation_verifier import verify_citation
 
@@ -796,6 +798,45 @@ class JarvisLive:
                         context += "\n".join(cite_lines)
                 except Exception as e:
                     print(f"[JARVIS] citation check failed: {e}")
+                # ── Bibliographic metadata (stable citation locators) ────────
+                # Each vault page can be tied to a registered work with author,
+                # work, language, edition and locator (book/chapter/section) —
+                # stable across editions, unlike page numbers. The model cites
+                # these locators so every reference is independently checkable.
+                try:
+                    bib_lines: list[str] = []
+                    for page in decision.get("pages", []) or []:
+                        title = str(page.get("title") or "")
+                        if not title:
+                            continue
+                        entry = get_bibliographic_entry(title)
+                        if not entry:
+                            continue
+                        parts = []
+                        if entry.get("author"):
+                            parts.append(f"author:{entry['author']}")
+                        if entry.get("work"):
+                            parts.append(f"work:{entry['work']}")
+                        if entry.get("language"):
+                            parts.append(f"lang:{entry['language']}")
+                        if entry.get("edition"):
+                            parts.append(f"edition:{entry['edition']}")
+                        loc = []
+                        if entry.get("book"):
+                            loc.append(f"book:{entry['book']}")
+                        if entry.get("chapter"):
+                            loc.append(f"chapter:{entry['chapter']}")
+                        if entry.get("section"):
+                            loc.append(f"section:{entry['section']}")
+                        if loc:
+                            parts.append(f"locator:{'; '.join(loc)}")
+                        if parts:
+                            bib_lines.append(f"  [[{title}]] — {' | '.join(parts)}")
+                    if bib_lines:
+                        context = context + "\n[Bibliographic registry — cite these stable locators]\n"
+                        context += "\n".join(bib_lines)
+                except Exception as e:
+                    print(f"[JARVIS] bibliographic lookup failed: {e}")
                 # Layer 2: prepend continuity hooks if available
                 if continuity_hooks:
                     context = " [" + " | ".join(continuity_hooks) + "] " + context
