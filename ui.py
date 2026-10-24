@@ -4774,7 +4774,7 @@ class MainWindow(QMainWindow):
         self._content_panel.hide()
 
         cw = self.centralWidget()
-        pw, ph = 960, 640
+        pw, ph = 1100, 680
         x = (cw.width()  - pw) // 2
         y = (cw.height() - ph) // 2
         self._brain_panel = BrainPanel(cw)
@@ -5999,19 +5999,22 @@ class BrainPanel(QWidget):
         left = self._build_left_col()
         body.addWidget(left, stretch=1)
 
-        # Centre: radar + vault info
+        # Centre: radar (top) + vault info (bottom)
         centre = QWidget()
         c_lay = QVBoxLayout(centre)
         c_lay.setContentsMargins(0, 0, 0, 0)
         c_lay.setSpacing(6)
         self._radar_canvas = RadarCanvas(self)
-        self._radar_canvas.setFixedHeight(320)
+        self._radar_canvas.setMinimumHeight(280)
+        self._radar_canvas.setFixedHeight(340)
         c_lay.addWidget(self._radar_canvas)
+        # Vault info as text below radar
         self._vault_info = VaultInfoPanel()
         c_lay.addWidget(self._vault_info)
+        c_lay.addStretch()
         body.addWidget(centre, stretch=2)
 
-        # Right col: log + agents
+        # Right col: log + agents + input
         right = self._build_right_col()
         body.addWidget(right, stretch=1)
 
