@@ -49,7 +49,10 @@ def save_theological_metadata(metadata: dict) -> None:
     sessions can benefit from prior theological analysis without re-spending quota.
     """
     ensure_theological_dir()
-    lt = load_long_term()
+    try:
+        lt = json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        lt = {}
     lt["theological_metadata"] = metadata
     # Track the query that produced this metadata
     q = metadata.get("query", "")
@@ -65,19 +68,26 @@ def save_theological_metadata(metadata: dict) -> None:
         encoding="utf-8",
     )
 
+def _load_long_term() -> dict:
+    """Read long_term.json safely, returning {} when absent or unparseable."""
+    try:
+        return json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
 def load_theological_metadata() -> dict:
     """Load previously saved theological metadata from long_term.json."""
-    lt = load_long_term()
+    lt = _load_long_term()
     return lt.get("theological_metadata", {})
 
 def get_last_theological_query() -> str:
     """Get the last theological query that was processed."""
-    lt = load_long_term()
+    lt = _load_long_term()
     return lt.get("last_theological_query", "")
 
 def get_theological_patterns() -> dict:
     """Get stored theological patterns for smarter routing."""
-    lt = load_long_term()
+    lt = _load_long_term()
     return lt.get("theological_patterns", {})
 
 
