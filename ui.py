@@ -6039,8 +6039,10 @@ class BrainPanel(QWidget):
         self._cpu_lbl.setFont(QFont(_FONT_H, 10, QFont.Weight.Bold))
         self._cpu_lbl.setStyleSheet(f"color: {_BRAIN_CYAN}; background: transparent;")
         lay.addWidget(_row("CPU", self._cpu_lbl))
-        self._cpu_bar = _fill_bar(self._cpu_lbl)
+        self._cpu_bar = QFrame()
+        self._cpu_bar.setFixedHeight(5)
         self._cpu_bar.setFixedWidth(60)
+        self._cpu_bar.setStyleSheet(f"background: {_BRAIN_CYAN}; border-radius: 3px;")
         lay.addWidget(self._cpu_bar)
 
         self._mem_lbl = QLabel("42%")
