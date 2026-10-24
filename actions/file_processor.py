@@ -1603,7 +1603,7 @@ def _tk_ingestion_window(paths, action, params, speak, player, preselect=None):
                 canvas.create_window((0, 0), window=rows, anchor="nw")
                 selections = []
                 for profile in profiles:
-                    brief = " ".join(profile.brief.split())[:70]
+                    brief = " ".join((profile.description or "").split())[:70]
                     var = tk.BooleanVar(value=True)
                     tk.Checkbutton(rows, text=f"{profile.name} — {brief}…",
                                    variable=var, anchor="w", wraplength=420,
@@ -1816,7 +1816,7 @@ def _theology_structure(text: str, source_name: str, persona=None,
     try:
         if persona is not None:
             team = (f"You are the specialist theology agent '{persona.name}'.\n"
-                    f"YOUR BRIEF:\n{persona.brief}\n\n"
+                    f"YOUR BRIEF:\n{persona.description}\n\n"
                     "You are one of MARK-LIV's theology team processing a source. "
                     "Structure it strictly through your own specialty, but fill "
                     "the SAME JSON shape below.\n")

@@ -26,6 +26,7 @@ AGENTS_DIR_KEY = "theology_agents_dir"   # optional override in config/api_keys.
 _BRIEF_CHARS   = 900                     # persona size handed to the model
 _NAME_PREFIX   = "agent-"
 _SELF_DOC      = "_self_knowledge.md"   # the self-knowledge doc filename
+_IDENTITY      = "MARK-LIV theology agents — second-brain vault ingestion"
 
 @dataclass(frozen=True)
 class AgentProfile:
