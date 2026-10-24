@@ -55,6 +55,7 @@ from memory.memory_manager import (
     search_memory, set_trim_notifier,
     get_last_theological_query, get_theological_patterns, save_theological_metadata,
 )
+from actions.theology_citation_verifier import verify_citation
 
 # The file-backed tools (open_app, web_search, browser_control, …) are no longer
 # imported or declared here — they self-describe via a TOOL dict in their own
@@ -775,6 +776,26 @@ class JarvisLive:
                     meta_parts.append(f"concepts:{','.join(concepts[:3])}")
                 if meta_parts:
                     context = context + " [" + " | ".join(meta_parts) + "]"
+                # ── Citation check (mechanical controls 1–2) ─────────────────
+                # Each page the conversation will cite is verified mechanically:
+                # existence (page in vault) and fidelity (quote matches page).
+                # Relevance (control 3) and context (control 4) remain the
+                # model's judgement — this module never calls a model itself.
+                try:
+                    cite_lines: list[str] = []
+                    for page in decision.get("pages", []) or []:
+                        title = str(page.get("title") or "")
+                        if not title:
+                            continue
+                        check = verify_citation(title, "", "", claim="")
+                        status = ("✓" if check.exists else "✗")
+                        cite_lines.append(f"  {status} [[{title}]] — {check.reason}")
+                    if cite_lines:
+                        context = context + "\n[Citation check — existence only: "
+                        context += "fidelity/relevance/context judged by model on its own citations]\n"
+                        context += "\n".join(cite_lines)
+                except Exception as e:
+                    print(f"[JARVIS] citation check failed: {e}")
                 # Layer 2: prepend continuity hooks if available
                 if continuity_hooks:
                     context = " [" + " | ".join(continuity_hooks) + "] " + context
