@@ -12,7 +12,10 @@ pool instead of LangGraph:
                  gaps, confidence
     4  critique  (deep runs) claims are checked against the evidence and
                  corrected before they can be polished
-    5  write     one call per section, so a long report never depends on a
+    5  read      (theological runs) what the outline holds is said as a
+                 reading: subject, each item in its authority, each with its
+                 weight marked — checked before it is spoken or filed
+    6  write     one call per section, so a long report never depends on a
                  single model reply arriving intact
 
 Three decisions worth defending:
@@ -43,7 +46,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Callable
 
-from . import config, llm, report as report_mod, search as search_mod
+from . import config, llm, reading as reading_mod, report as report_mod
+from . import search as search_mod
 from . import skills as skills_mod, store, subagents as subagents_mod
 from .fetcher import fetch as default_fetch, normalise_url
 from .util import clip
@@ -622,7 +626,40 @@ EVIDENCE (the notes behind it)
                     f"Critique applied: {len(issues)} issue(s), "
                     f"verdict {critique.get('verdict') or 'unknown'}")
 
-    # ── stage 5: write ───────────────────────────────────────────────────────
+    # ── stage 5: read ───────────────────────────────────────────────────────────────
+    def _read(self) -> None:
+        """Compose the reading of what this run established, and check it.
+
+        Only for a run the theology discipline governs: the reading names
+        authorities that exist in theology alone, and a reading of a market
+        report that classified its evidence as "Tradition" would be a category
+        error dressed as a summary.
+
+        The composition is one call; the CHECK is this module's, not the
+        model's. `reading.validate` drops any item whose authority or weight
+        falls outside the closed sets, or whose sources are numbers the run
+        never fetched — and drops the whole reading when nothing valid is left.
+        A run whose reading will not check still writes its report; it simply
+        is not read back theologically, and says so."""
+        if not reading_mod.available(self.rec):
+            return
+        if not (self.rec.outline or {}).get("sections"):
+            return
+        self.rec.set_stage("reading", "reading")
+        self._event("reading", "Reading what the outline holds, in its authorities")
+        prompt = reading_mod.prompt(self.rec)
+        raw = self._call("theologian", prompt, json_mode=True, timeout=90_000)
+        checked = reading_mod.validate(raw, self.rec)
+        if not checked:
+            print("[Research] the reading did not check out — the report stands on its own")
+            self._event("reading", "Reading discarded: it did not check out")
+            return
+        self.rec.reading = checked
+        self._save()
+        self._event("reading", f"Reading: {len(checked['items'])} item(s) on "
+                               f"« {checked['subject'][:60]} »")
+
+    # ── stage 6: write ───────────────────────────────────────────────────────
     def _write(self) -> None:
         self.rec.set_stage("writing", "writing")
         outline = self.rec.outline
@@ -685,6 +722,8 @@ LANGUAGE: {language}"""
             self._check()
             self._critique()
             self._check()
+            self._read()
+            self._check()
             self._write()
             self.rec.set_stage("done", "done")
             self.rec.duration_s = time.monotonic() - self._t0
@@ -720,6 +759,7 @@ LANGUAGE: {language}"""
             self._event("analysing", "Resuming from the notes on disk")
             self.rec.outline = self._analyse(save=True)
             self._critique()
+            self._read()
             self._write()
             self.rec.set_stage("done", "done")
             self.rec.error = ""

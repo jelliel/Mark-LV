@@ -382,3 +382,7 @@ def save_plugin_enabled(plugin_name: str, enabled: bool) -> None:
     plugins_cfg[plugin_name] = enabled
     data["plugins_enabled"] = plugins_cfg
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
+def setting(key: str, default: str = "") -> str:
+    """Get a config value from api_keys.json."""
+    cfg = load_api_keys()
+    return cfg.get(key, default)

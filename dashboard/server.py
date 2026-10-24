@@ -770,6 +770,12 @@ class DashboardServer:
                     "size": size,
                     "saved_to": str(self._uploads_dir),
                 }))
+                try:
+                    self._command_queue.put_nowait(
+                        f"[FILE_UPLOADED] path={dest} | name={dest.name}"
+                    )
+                except Exception:
+                    pass
                 return JSONResponse({"ok": True, "name": dest.name, "size": size})
         else:
             @app.post("/api/upload")

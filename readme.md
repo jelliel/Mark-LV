@@ -70,6 +70,7 @@ It's not just an assistant — it's an extension of your digital life.
 | 📜 Declarative Skills | Markdown skills the planner selects per topic: sourcing, comparison, fact-check, technical due diligence, theology source critique |
 | ♻️ Resumable Reports | Every source, note and outline is on disk — a failed or cancelled run is rebuilt from its notes without re-reading a page |
 | 🕳️ Vault Gap Trigger | A theology question the vault cannot answer starts a deep run by itself, and the finished report is filed back as a synthesis page — measured coverage, one run at a time, 30-minute cooldown |
+| 📜 Theological Reading | What the brain returns is read back theologically — the subject first, then each item in its own authority, with its weight marked — instead of a list of page titles |
 | ⏰ Smart Reminders | OS-native scheduled notifications (Windows Task Scheduler / macOS LaunchAgent / Linux systemd) |
 | 📂 File Processor | Read, summarize, and answer questions about local files |
 | 🌐 Browser Control | Open URLs, navigate tabs, and interact with the browser by voice |
@@ -173,7 +174,7 @@ next to a single-process voice assistant would trade this app's one dependency
 for four, and its one window for a second control plane.
 
 What was worth taking is the loop that made DeerFlow useful, and that is what
-`research/` now is — **five stages, one thread pool, no new dependency**:
+`research/` now is — **six stages, one thread pool, no new dependency**:
 
 | Stage | What happens | Why it is its own stage |
 |---|---|---|
@@ -181,6 +182,7 @@ What was worth taking is the loop that made DeerFlow useful, and that is what
 | **Research** | per round: search in parallel → number the sources → fetch in parallel → one reader per question | reading is the slow part, and it is embarrassingly parallel |
 | **Analyse** | the notes become one outline: claims, sources, contradictions, gaps, confidence | reconciliation is a different job from summarising |
 | **Critique** | every claim is checked against the evidence and corrected before it is polished (deep runs) | prose hides a weak claim; an outline does not |
+| **Read** | (theological runs) what the outline holds is said as a reading — subject, each item in its authority, each with its weight marked — and checked before it is spoken or filed | the only part of a run that is spoken and filed as doctrine-shaped prose cannot be left to the model's taste |
 | **Write** | one call per section, then header, limits, sources and method are added by code | a long report should not depend on a single reply arriving intact |
 
 ### Three things that are structural, not prompted
@@ -247,7 +249,48 @@ default) bounds the whole thing: a gap is a trigger, not a purchase order.
 `synthesis` page — attribution line, source URLs in the metadata, indexed and
 pushed to XERJ like any other page — and its **title carries the subject**, so
 the next question about that subject reads the vault instead of buying the
-report again.
+report again. The page opens with the **reading** (below), so what the vault
+answers with on that subject is the reading itself, not five sections of
+prose.
+
+### The report is read back, not summarised
+
+A deep report is a document: sections, claims, citations, a method. What the
+user is owed when it finishes is not a document but a **reading** — the subject
+first, then each point in the authority it speaks with, its weight marked, and
+what stays open. The vault's searches already returned one; the research path
+now composes one, and `research/reading.py` is where that happens.
+
+**One composition, two surfaces.** The reading is composed once, from the
+outline the run already produced — never from the web a second time — and
+stored on the run. The spoken announcement and the synthesis page are two
+renderings of that one structure. A reading said one way and filed another is
+two readings, and the vault would eventually contradict the voice.
+
+**The vocabulary is closed, and the check is ours, not the model's.** An
+authority outside the five (Scripture, Tradition, magisterial teaching,
+scholarship, practice and custom) or a weight outside the four (*defined*,
+*commonly held*, *disputed*, *one author's opinion*) is not a reading, it is an
+improvisation. Validation drops what falls outside — item by item, along with
+every citation of a page the run never fetched — and drops the whole reading
+when nothing valid is left. That matters because a reading is the one part of a
+research run that is **spoken and filed as doctrine-shaped prose**: an
+unverified authority is believed, not checked by the ear. A run whose reading
+will not check still writes its report; it simply is not read back
+theologically, and says so.
+
+**It is only ever composed for a run the theology discipline governs** — which
+is what the vault trigger always requests, what the planner selects for a
+doctrinal or historical topic, and what `vault=true` now forces. A reading of
+a market report that classified its evidence as *Tradition* would be a category
+error dressed as a summary.
+
+**Where it shows up:** the report, ahead of the sections that argue for it; the
+`[RESEARCH_DONE]` announcement, which asks the model to relay the reading in
+the user's own language rather than summarise the report; and the synthesis
+page, where it is the first thing on the page — because a vault answer quotes
+the head of a page, and a reading cropped mid-item is a reading the model
+completes from memory.
 
 Both search paths fire it: `theology_brain` (keyword) and `xerj_search`
 (semantic, and its fallback when the engine is down). The ceiling, the
@@ -288,6 +331,22 @@ tokenizers, and a search that found a page could still be answered twice.
 A name or a date is not worth a report: *"who is the pope"* is answered from
 what the assistant knows, and only a question the vault could not settle is
 sent out to be researched.
+
+**What comes back is read, not listed.** A vault of page titles is an index,
+not an answer to a theological question. So every retrieval — the consultation
+the application makes before the answer, the keyword search the model makes
+itself, the semantic search over the same pages — carries the same **frame**:
+name the subject the question is about, then take each item in turn and say
+what it holds *on that question*, naming the authority it speaks with
+(Scripture, Tradition, Magisterial teaching, Scholarship, Practice and
+custom), and mark its weight — what is defined, what is commonly held, what is
+disputed, what is one author's opinion. Then say plainly what the reading does
+not settle.
+
+One frame, one behaviour: it lives in the router
+(`actions/_vault_router.py`), the light layer every search path already
+reaches, so the answer cannot read as a summary on one path and as a reading
+on another.
 
 ### From the chair
 
@@ -371,8 +430,8 @@ disk. Four of the six sources could not be read — three grounded answers with 
 citable page and one PDF — and the report says so beside their numbers instead of
 quietly dropping them.
 
-The test suite runs the whole five-stage loop against a fake web and a fake
-model: **31 tests, 0.31 s, no network, no API key** —
+The test suite runs the whole six-stage loop against a fake web and a fake
+model: **68 tests, a few seconds, no network, no API key** —
 `python tests/test_research_engine.py`.
 
 ## 🔄 The Foundation Update — in every Mark from LII
@@ -568,8 +627,8 @@ Mark LV/
 │   ├── action_loader.py      # Bundled-action engine — the built-in twin of plugin_loader
 │   └── wake_word.py          # Local "Hey Jarvis" detector — own thread, offline, opt-in
 ├── research/                 # the research loop, native — no Node, no Docker
-│   ├── engine.py             # plan → parallel readers → analysis → critique → write
-│   ├── subagents.py          # planner / researcher / analyst / critic / writer
+│   ├── engine.py             # plan → parallel readers → analysis → critique → read → write
+│   ├── subagents.py          # planner / researcher / analyst / critic / theologian / writer
 │   ├── skills.py             # declarative skills loader (Markdown, on demand)
 │   ├── skills/               # the shipped skills themselves
 │   ├── fetcher.py            # page → text, with a public-address policy
@@ -577,11 +636,12 @@ Mark LV/
 │   ├── jobs.py               # one run at a time — shared by the voice tool and the vault
 │   ├── theology.py           # vault gap → deep run → synthesis page
 │   ├── store.py              # runs on disk: plan, sources, notes, report, resume
+│   ├── reading.py            # the reading: closed vocabulary, checked before it is said
 │   ├── report.py             # citation validation and report assembly
 │   ├── llm.py                # every call through core/gemini.py
 │   └── config.py             # settings and folders
 ├── tests/
-│   └── test_research_engine.py  # 31 tests, no network, no key
+│   └── test_research_engine.py  # 68 tests, no network, no key
 └── config/
     ├── api_keys.json         # API key, name, voice, colour, toggles — created on first launch (git-ignored)
     └── certs/                # Self-signed TLS pair for the phone dashboard — generated locally (git-ignored)

@@ -281,6 +281,8 @@ def measure(query: str, vault=None) -> dict:
         "best_title": "", "best_score": 0, "best_coverage": 0.0,
         "raw_hits": 0, "gap": False, "reason": "", "subject": "",
         "matches": [], "df": {}, "df_title": {},
+        "doctrine": "", "authority": "", "theological_category": "",
+        "related_concepts": [],
     }
     try:
         if not root.is_dir():
@@ -315,6 +317,9 @@ def measure(query: str, vault=None) -> dict:
         result["df_title"] = df_title
         result["matches"] = rows
         result["raw_hits"] = _raw_hits(root, terms)
+
+        # Detect and add theological metadata
+        result = _detect_theological_metadata(result, bridge, root, terms, vocab)
     except Exception as e:
         print(f"[VaultRouter] measurement failed: {type(e).__name__}: {e}")
         result["reason"] = "vault illisible"
@@ -325,6 +330,105 @@ def measure(query: str, vault=None) -> dict:
         _MEASURED.clear()
     _MEASURED[key] = result
     return result
+
+
+def _detect_theological_metadata(result: dict, bridge, root, terms: list[str], vocab) -> dict:
+    """Detect theological metadata from measured pages: doctrine, authority weight, category.
+
+    Enriches the measurement result with structured theological information so the
+    vault + research flow can produce expert-level theological readings."""
+    import re
+
+    # Default values
+    doctrine = ""
+    authority = ""
+    theological_category = ""
+    related_concepts = []
+
+    try:
+        # Gather text from best-matching pages
+        all_text = ""
+        for row in result.get("matches", [])[:3]:  # top 3 pages
+            try:
+                body = str(row.get("page", {}).get("body", ""))
+                all_text += " " + body
+            except Exception:
+                continue
+
+        if not all_text.strip():
+            return result | {"doctrine": doctrine, "authority": authority,
+                           "theological_category": theological_category,
+                           "related_concepts": related_concepts}
+
+        # Detect doctrine keywords
+        doctrine_patterns = {
+            "trinitarian": ["trinité", "trinity", "trinitaire", "homoousios", "homoousie"],
+            "christological": ["christologie", "christology", " christ "],
+            "pneumatological": ["pneumatologie", "pneumatology", "esprit saint", "spirit"],
+            "soteriological": ["sotériologie", "soteriology", "salut", "salvation"],
+            "ecclesiological": ["écclésiologie", "ecclesiology", "église", "church"],
+            "sacramental": ["sacramental", "sacrement", "eucharistie", "eucharist", "baptême", "baptism"],
+            "marian": ["mariologie", "mariology", "madone", "marie", "mère de dieu"],
+            "papal": ["pape", "pope", "roman", "roman catholic"],
+            "sacramental": ["sacrement", "baptême", "confirmation", "ordination"],
+            "eschatological": ["eschatologie", "eschatology", "fin des temps", "last days"],
+        }
+
+        all_text_lower = all_text.lower()
+        detected_doctrines = []
+        for doctype, keywords in doctrine_patterns.items():
+            if any(kw in all_text_lower for kw in keywords):
+                detected_doctrines.append(doctype)
+
+        if detected_doctrines:
+            doctrine = detected_doctrines[0]  # primary doctrine
+
+        # Detect authority weight from page sources
+        # Look for weight markers in the page metadata or body
+        authority_keywords = {
+            "defined": ["définie", "définie par", "dogme", "defined", "binds"],
+            "common": ["couramment tenue", "commonly held", "wide-spread", "majority"],
+            "disputed": ["disputé", "disputed", "contested", "debate"],
+            "opinion": ["opinion", "avis", "viewpoint", "one author"],
+        }
+
+        for auth_type, kws in authority_keywords.items():
+            if any(kw in all_text_lower for kw in kws):
+                authority = auth_type
+                break
+
+        # Detect theological category
+        category_keywords = {
+            "dogmatic": ["dogmatique", "dogmatic", "doctrine officielle"],
+            "biblical": ["biblique", "scriptural", "texte biblique"],
+            "patristic": ["père", "patrism", "père de l'église"],
+            "scholastic": ["scolastique", "scholastic", "summa"],
+            "magisterial": ["magistériel", "magisterial", "concile", "council"],
+            "spiritual": ["spirituel", "spiritual", "mystique", "mystical"],
+        }
+
+        for cat_type, kws in category_keywords.items():
+            if any(kw in all_text_lower for kw in kws):
+                theological_category = cat_type
+                break
+
+        # Extract related concepts (proper names, councils, texts)
+        proper_terms = [t for t in terms if vocab.canonical(t) in vocab.proper_terms("")]
+        # Filter to theological proper terms
+        theological_names = ["augustin", "aquinas", "athanase", "nicée", "calcedoine",
+                           "concile", "council", "papale", "papal", "scripture", "bible"]
+        related_concepts = [t for t in proper_terms if any(n in t.lower() for n in theological_names)][:5]
+
+    except Exception as e:
+        print(f"[VaultRouter] metadata detection error: {type(e).__name__}: {e}")
+
+    # Return result with added metadata
+    return result | {
+        "doctrine": doctrine,
+        "authority": authority,
+        "theological_category": theological_category,
+        "related_concepts": related_concepts,
+    }
 
 
 def _raw_hits(vault: Path, terms: list[str]) -> int:
@@ -384,9 +488,43 @@ def _decide(result: dict) -> None:
         result["reason"] = "mention unique"
 
 
-# ── the route ───────────────────────────────────────────────────────────────
+# ── how what the brain returned is read back ───────────────────────────────
+# The vault holds the user's own reading; a list of page titles is an index,
+# not an answer to a theological question. So what comes back is not handed
+# over raw: it comes with the frame that turns it into a READING — the subject
+# first, then each item in turn, each in the authority it speaks with, each
+# with its weight marked, and what the reading does not settle said plainly.
+#
+# It lives here, in the light layer, because two paths need it and they must
+# not drift: the consultation the application makes before the model answers,
+# and the keyword or semantic search the model makes itself. A brain answer
+# that reads as a summary on one path and as a reading on the other is not one
+# behaviour, it is two.
+READING_FRAME = (
+    "[READING] Give this back as a theological reading of the question, not "
+    "as a list of pages:\n"
+    "- Name the subject the question is about, first.\n"
+    "- Take each item in turn and say what it holds ON THAT QUESTION, naming "
+    "the authority it speaks with: Scripture (book, chapter and verse, and "
+    "the translation), Tradition (the work, book and chapter), Magisterial "
+    "teaching (the document, its date, its level), Scholarship (author, work, "
+    "year), or Practice and custom (as observed, and dated).\n"
+    "- Mark the weight of each: what is defined, what is commonly held, what "
+    "is disputed, what is one author's opinion.\n"
+    "- Never add what the items do not say. Speak in the user's language, in "
+    "the register of the reading — not a lecture, and not the pages' wording. "
+    "If a research is running, relay it and wait for it rather than reading "
+    "the items in its place."
+)
 
-_EXCERPT = 320
+
+# ── the route ───────────────────────────────────────────────────────────────
+# How much of a page the conversation is given. Enough for the READING that
+# now opens a synthesis page to arrive whole — subject, its items, and what it
+# does not settle. Shorter, and the model receives a page cut in the middle of
+# an item and completes the rest from memory, which is the exact failure the
+# frame above exists to prevent. Cost is bounded: three pages, so under 2kB.
+_EXCERPT = 600
 
 
 def warm(vault=None) -> bool:
@@ -508,6 +646,8 @@ def _vault_context(pages: list[dict]) -> str:
         if len(text) > _EXCERPT:
             text = text[:_EXCERPT].rstrip() + "…"
         lines.append(f"- [[{page['title']}]] ({page['kind']}) — {text}")
-    lines.append("Answer from these pages and cite them ([[Page Title]]). "
-                 "If they do not settle the question, say so plainly.")
+    lines.append(READING_FRAME)
+    lines.append("Answer from these pages, cite every one you used as "
+                 "[[Page Title]], and say plainly what the reading does not "
+                 "settle.")
     return "\n".join(lines)

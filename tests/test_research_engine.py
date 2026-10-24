@@ -14,6 +14,7 @@ exists, and a resume never touches the network.
 """
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 import tempfile
@@ -24,8 +25,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from research import (config, engine, jobs as jobs_mod, report, search, skills,
-                      store, subagents, theology)
+from research import (config, engine, jobs as jobs_mod, reading, report, search,
+                      skills, store, subagents, theology)
 from research.fetcher import Page, public_url_error
 
 DEMO_PLAN = {
@@ -71,6 +72,57 @@ DEMO_CRITIQUE = {
     "verdict": "sound",
 }
 
+DEMO_READING = {
+    "subject": "Ephesus and the title Theotokos",
+    "items": [
+        {"claim": "The title Theotokos was affirmed against Nestorius.",
+         "authority": "Magisterial teaching",        # a model's wording, not ours
+         "reference": "Council of Ephesus, 431, second action",
+         "weight": "defined",                       # …same for the weight
+         "sources": [1, 99]},                        # [99] does not exist — dropped
+        {"claim": "No formula of two natures was defined there.",
+         "authority": "tradition",
+         "reference": "the conciliar texts as received, and their date",
+         "weight": "commonly held",
+         "sources": [2]},
+        {"claim": "The reception is read differently by later schools.",
+         "authority": "scholarship",
+         "reference": "a modern historian of the councils, 2019",
+         "weight": "disputed",
+         "sources": [3]},
+        {"claim": "A point with no source behind it at all.",
+         "authority": "practice",
+         "reference": "as observed in one diocese",
+         "weight": "opinion",
+         "sources": [99]},                            # nothing real — dropped whole
+    ],
+    "open": ["How Chalcedon answered Ephesus."],
+}
+
+# A reading nothing checks out of: a sixth authority, an unknown weight, and
+# sources the run never fetched. Every item must be dropped.
+BROKEN_READING = {
+    "subject": "Ephesus",
+    "items": [
+        {"claim": "A claim resting on an authority that is not one of the five.",
+         "authority": "vibes",
+         "reference": "trust me",
+         "weight": "defined",
+         "sources": [1]},
+        {"claim": "A claim whose weight is not one of the four.",
+         "authority": "scripture",
+         "reference": "Matthew 1, 18",
+         "weight": "sort of certain",
+         "sources": [1]},
+        {"claim": "A claim citing pages the run never fetched.",
+         "authority": "scripture",
+         "reference": "John 1, 14",
+         "weight": "defined",
+         "sources": [42]},
+    ],
+    "open": [],
+}
+
 
 def fake_ask(prompt: str, tier: str = "", timeout_ms: int = 0,
              system: str = "", default: str = "") -> str:
@@ -89,6 +141,8 @@ def fake_ask_json(prompt: str, tier: str = "", timeout_ms: int = 0,
         return dict(DEMO_OUTLINE)
     if "critic of a research team" in system:
         return dict(DEMO_CRITIQUE)
+    if "theologian of a research team" in system:
+        return json.loads(json.dumps(DEMO_READING))
     return default
 
 
@@ -788,12 +842,296 @@ class TheologyGapTests(unittest.TestCase):
                                    "query": "concile de Chalcédoine"})
             self.assertIn("NOTE AUTO", out)
             self.assertIn("No wiki page matches", out)
+            # nothing was retrieved: there is nothing to read back
+            self.assertNotIn("[READING]", out)
 
             status = self.bridge.run({"action": "status"})
             self.assertNotIn("NOTE AUTO", status)
         finally:
             self.bridge._vault = original_vault
             theology.maybe_start = original_maybe
+
+    def test_a_brain_search_asks_for_a_theological_reading(self):
+        """What the brain returns is not a list of titles.
+
+        It comes back with the frame that turns it into a reading: the
+        subject first, then each item in the authority it speaks with, and
+        its weight marked — defined, commonly held, disputed, or one
+        author's opinion. The model cannot invent that frame from the tool
+        description, so the tool carries it.
+        """
+        self._page("chalcedoine", "Chalcédoine",
+                   "Le concile de Chalcédoine (451) définit les deux natures "
+                   "du Christ en une seule personne.")
+        original_vault = self.bridge._vault
+        original_maybe = theology.maybe_start
+        self.bridge._vault = lambda: self.vault
+        theology.maybe_start = lambda query, **kw: ""
+        try:
+            out = self.bridge.run({"action": "search",
+                                   "query": "concile de Chalcédoine"})
+        finally:
+            self.bridge._vault = original_vault
+            theology.maybe_start = original_maybe
+
+        self.assertIn("Chalcédoine", out)
+        self.assertIn("[READING]", out)
+        for authority in ("Scripture", "Tradition", "Magisterial",
+                          "Scholarship"):
+            self.assertIn(authority, out)
+        self.assertIn("what is defined", out)
+        self.assertIn("disputed", out)
+
+
+class ReadingTests(unittest.TestCase):
+    """What a run says about itself, checked before it is said.
+
+    The reading is the one part of a research run that is spoken to the user
+    AND filed into the vault as doctrine-shaped prose. An authority that is not
+    one of the five, a weight that is not one of the four, or a citation of a
+    page the run never fetched would all be believed — so each of those is
+    dropped here, in code, before it reaches a voice or a page.
+    """
+
+    def test_a_theological_run_carries_a_checked_reading(self):
+        """The whole loop: composed from the outline, then checked."""
+        raw = json.loads(json.dumps(DEMO_READING))
+        raw["items"].append({"claim": "A sixth authority, which is not one.",
+                             "authority": "vibes", "reference": "trust me",
+                             "weight": "defined", "sources": [1]})
+        raw["items"].append({"claim": "A weight outside the four.",
+                             "authority": "scripture", "reference": "Matthew 1",
+                             "weight": "sort of certain", "sources": [1]})
+        raw["items"].append({"claim": "A claim citing a page never fetched.",
+                             "authority": "scripture", "reference": "John 1",
+                             "weight": "defined", "sources": [42]})
+
+        run = store.Run(id="r", topic="Ephesus", status="done",
+                        skills=["sourced-brief", "theology-source-critique"],
+                        outline=dict(DEMO_OUTLINE),
+                        sources=[{"n": 1}, {"n": 2}, {"n": 3}])
+        result = reading.validate(raw, run)
+
+        self.assertEqual(result["subject"], "Ephesus and the title Theotokos")
+        # The three items that checked out, and only those three.
+        self.assertEqual(len(result["items"]), 3)
+        # The model's wording was folded onto our closed sets.
+        self.assertEqual(result["items"][0]["authority"], "magisterial")
+        self.assertEqual(result["items"][0]["weight"], "defined")
+        self.assertEqual(result["items"][1]["weight"], "common")
+        # [99] is not a page this run fetched; [1] is.
+        self.assertEqual(result["items"][0]["sources"], [1])
+        self.assertEqual(result["open"], ["How Chalcedon answered Ephesus."])
+
+    def test_nothing_valid_left_means_no_reading_at_all(self):
+        """A reading is not repaired. If no item survives, it is not said."""
+        run = store.Run(id="r", topic="Ephesus", status="done",
+                        outline=dict(DEMO_OUTLINE), sources=[{"n": 1}])
+        self.assertIsNone(reading.validate(json.loads(json.dumps(BROKEN_READING)),
+                                           run))
+        self.assertIsNone(reading.validate(None, run))
+        self.assertIsNone(reading.validate("a sentence", run))
+        self.assertIsNone(reading.validate({"items": []}, run))
+        # A subject is what a reading is a reading OF.
+        self.assertIsNone(reading.validate({"items": DEMO_READING["items"]}, run))
+
+    def test_the_vocabulary_is_closed_in_both_directions(self):
+        """Not just synonyms: a genuinely new authority is refused."""
+        run = store.Run(id="r", topic="x", status="done", sources=[{"n": 1}])
+        for authority in ("scripture", "Scripture", "Magisterial teaching",
+                          "Enseignement magistériel", "practice and custom",
+                          "Scholarship", "Tradition"):
+            item = {"claim": "c", "authority": authority, "reference": "r",
+                    "weight": "defined", "sources": [1]}
+            self.assertTrue(reading.validate({"subject": "s", "items": [item]}, run),
+                            authority)
+        for authority in ("vibes", "common sense", "the Church says", ""):
+            item = {"claim": "c", "authority": authority, "reference": "r",
+                    "weight": "defined", "sources": [1]}
+            self.assertFalse(reading.validate({"subject": "s", "items": [item]}, run),
+                             authority)
+        for weight in ("defined", "disputed", "one author's opinion",
+                       "one authors opinion", "communément tenu"):
+            item = {"claim": "c", "authority": "scripture", "reference": "r",
+                    "weight": weight, "sources": [1]}
+            self.assertTrue(reading.validate({"subject": "s", "items": [item]}, run),
+                            weight)
+        for weight in ("certain", "probably", "sort of", ""):
+            item = {"claim": "c", "authority": "scripture", "reference": "r",
+                    "weight": weight, "sources": [1]}
+            self.assertFalse(reading.validate({"subject": "s", "items": [item]}, run),
+                             weight)
+
+    def test_an_item_without_a_reference_is_not_a_reading(self):
+        """Naming the authority by kind is not naming it: "Magisterial" with
+        no document, date and level behind it is a label, and a reading is
+        made of checkable particulars."""
+        run = store.Run(id="r", topic="x", status="done", sources=[{"n": 1}])
+        item = {"claim": "c", "authority": "magisterial", "reference": "",
+                "weight": "defined", "sources": [1]}
+        self.assertIsNone(reading.validate({"subject": "s", "items": [item]}, run))
+
+    def test_a_run_that_is_not_theological_is_not_read(self):
+        """The reading names authorities that exist in theology alone."""
+        self.assertTrue(reading.available(
+            store.Run(id="r", topic="x", skills=["theology-source-critique"])))
+        for skills in ([], ["sourced-brief"], ["fact-check"], None):
+            self.assertFalse(reading.available(store.Run(id="r", topic="x",
+                                                         skills=skills)), skills)
+
+    def test_the_run_composes_and_keeps_its_reading(self):
+        """End to end: the engine composes it, checks it, and stores it on the
+        run — so the announcement and the vault page are two renderings of
+        one structure, not two compositions that could disagree."""
+        run, eng = engine.start("Council of Ephesus", depth="quick",
+                                deps=deps(FakeWeb()))
+        result = eng.run()
+        self.assertEqual(result.status, "done", result.error)
+        self.assertTrue(reading.carried(result), result.reading)
+        self.assertEqual(result.reading["subject"], "Ephesus and the title Theotokos")
+        self.assertEqual(len(result.reading["items"]), 3)   # two dropped above
+        # The reading is in the report, before the sections that argue for it.
+        text = Path(result.report_path).read_text(encoding="utf-8")
+        self.assertIn("## Theological reading", text)
+        self.assertLess(text.index("## Theological reading"),
+                        text.index("## What was defined"))
+        self.assertIn("Magisterial teaching", text)
+
+    def test_the_announcement_carries_the_reading(self):
+        """The voice gets the reading, not a summary of the report."""
+        sources = [{"n": 1}, {"n": 2}, {"n": 3}]
+        run = store.Run(id="r", topic="concile de Chalcédoine",
+                        title="Chalcédoine", status="done",
+                        report_path="C:/tmp/report.md", sources=sources,
+                        outline={"language": "en"})
+        # Exactly what the engine stores: composed, then checked.
+        run.reading = reading.validate(json.loads(json.dumps(DEMO_READING)), run)
+        text = jobs_mod._done_text(run)
+        self.assertIn("[RESEARCH_DONE]", text)
+        self.assertIn("Ephesus and the title Theotokos", text)
+        self.assertIn("Magisterial teaching", text)
+        self.assertIn("defined", text)
+        self.assertIn("What the reading does not settle", text)
+        # The report is named, not read aloud.
+        self.assertIn("C:/tmp/report.md", text)
+        self.assertNotIn("three most important findings", text)
+
+    def test_a_run_without_a_reading_is_announced_as_it_always_was(self):
+        run = store.Run(id="r", topic="x", title="X", status="done",
+                        report_path="C:/tmp/report.md")
+        text = jobs_mod._done_text(run)
+        self.assertIn("three most important findings", text)
+        self.assertNotIn("Magisterial teaching", text)
+
+    def test_the_synthesis_page_leads_with_the_reading(self):
+        """A vault answer quotes the head of a page, so the reading goes
+        first — ahead of the attribution and the report — and the report's
+        own copy is taken out rather than filed twice."""
+        report_file = Path(tempfile.mkdtemp(prefix="reading-ingest-")) / "report.md"
+        block = reading.render_markdown(
+            reading.validate(json.loads(json.dumps(DEMO_READING)),
+                             store.Run(id="r", topic="x", status="done",
+                                       sources=[{"n": 1}, {"n": 2}, {"n": 3}])),
+            "en")
+        self.assertTrue(block)   # the fixture must survive the checker
+        report_file.write_text(
+            "---\ntitle: X\n---\n\n# Chalcédoine\n\n"
+            f"{block}\n\nLe concile définit deux natures [1].\n\n"
+            "## Sources\n\n1. [Source](https://e.org/chalcedoine)\n",
+            encoding="utf-8")
+        run = store.Run(id="run-r", topic="concile de Chalcédoine", status="done",
+                        report_path=str(report_file), title="Chalcédoine",
+                        outline={"title": "Chalcédoine", "language": "en"},
+                        reading=reading.validate(
+                            json.loads(json.dumps(DEMO_READING)),
+                            store.Run(id="r", topic="x", status="done",
+                                      sources=[{"n": 1}, {"n": 2}, {"n": 3}])),
+                        sources=[{"n": 1, "url": "https://e.org/chalcedoine",
+                                  "title": "Source"}])
+        vault = Path(tempfile.mkdtemp(prefix="reading-vault-"))
+        try:
+            theology.ingest(run, vault=vault)
+            pages = list((vault / "wiki" / "synthesis").glob("*.md"))
+            self.assertEqual(len(pages), 1)
+            text = pages[0].read_text(encoding="utf-8")
+            body = text.split("---", 2)[-1]
+            self.assertTrue(body.lstrip().startswith("## Theological reading"),
+                            body[:120])
+            self.assertIn("Recherche automatique", text)   # provenance kept
+            self.assertIn("Le concile définit deux natures", text)
+            self.assertEqual(text.count("## Theological reading"), 1)  # once only
+        finally:
+            shutil.rmtree(report_file.parent, ignore_errors=True)
+            shutil.rmtree(vault, ignore_errors=True)
+
+    def test_the_spoken_form_is_plain_and_carries_no_markers(self):
+        """The model relays this to a user. A `[3]` read aloud is a stutter,
+        and a Markdown heading is a piece of the page on the floor.
+
+        The reading is validated first — the engine never stores anything
+        else — and rendered in the language the report was written in."""
+        run = store.Run(id="r", topic="x", status="done", sources=[{"n": 1},
+                                                                    {"n": 2},
+                                                                    {"n": 3}])
+        checked = reading.validate(json.loads(json.dumps(DEMO_READING)), run)
+        text = reading.render_speech(checked, "fr")
+        self.assertNotIn("[", text)
+        self.assertNotIn("#", text)
+        self.assertNotIn("*", text)
+        self.assertIn("Sujet", text)
+        self.assertIn("Enseignement magistériel", text)   # the closed set, in French
+        self.assertIn("défini", text)
+
+    def test_a_reading_loaded_by_hand_is_said_anyway(self):
+        """The vocabulary is closed by `validate`; the renderers only name it.
+
+        A reading that did not go through the checker — a hand-built one, or
+        a run written before this module existed — is said as it came rather
+        than crashing the announcement of a run that did finish."""
+        run = store.Run(id="r", topic="x", title="X", status="done",
+                        report_path="C:/tmp/report.md",
+                        reading=json.loads(json.dumps(DEMO_READING)))
+        text = jobs_mod._done_text(run)
+        self.assertIn("Magisterial teaching", text)      # the raw wording, kept
+        self.assertIn("Ephesus and the title Theotokos", text)
+
+    def test_the_vault_excerpt_carries_the_whole_reading(self):
+        """The synthesis page is quoted from its head, so the reading that
+        opens it must arrive whole: subject, every item, and what it does not
+        settle. Cropped mid-item, the model finishes it from memory — the
+        failure the reading frame exists to prevent."""
+        vault = Path(tempfile.mkdtemp(prefix="reading-excerpt-"))
+        (vault / "wiki" / "synthesis").mkdir(parents=True)
+
+        def write(stem, title, body):
+            (vault / "wiki" / "synthesis" / f"{stem}.md").write_text(
+                f"---\ntitle: {title}\nkind: synthesis\n---\n\n{body}\n",
+                encoding="utf-8")
+
+        try:
+            body = reading.render_markdown(
+                reading.validate(json.loads(json.dumps(DEMO_READING)),
+                                 store.Run(id="r", topic="x", status="done",
+                                           sources=[{"n": 1}, {"n": 2}, {"n": 3}])),
+                "en")
+            write("ephesus", "Ephesus: one nature, two natures",
+                  body + "\n\n> Recherche automatique.\n\nThe report [1].\n")
+            from actions import _vault_router as router
+            decision = router.route("what did the council of Ephesus define",
+                                    vault=vault)
+            self.assertEqual(decision["kind"], "vault", decision)
+            context = decision["context"]
+            self.assertIn("## Theological reading", context)
+            self.assertIn("How Chalcedon answered Ephesus", context)
+            self.assertTrue(any(l.startswith("- [[") and not l.endswith("…")
+                                for l in context.split("\n")),
+                            "the reading was cropped before it reached the model")
+        finally:
+            shutil.rmtree(vault, ignore_errors=True)
+
+    def test_rendering_an_absent_reading_renders_nothing(self):
+        self.assertEqual(reading.render_markdown({}, "en"), "")
+        self.assertEqual(reading.render_speech(None, "fr"), "")
 
 
 class VaultRouterTests(unittest.TestCase):
@@ -828,6 +1166,22 @@ class VaultRouterTests(unittest.TestCase):
         # the conversation is told what it may use, and may cite it
         self.assertIn("[VAULT]", decision["context"])
         self.assertIn("[[", decision["context"])
+
+    def test_the_vault_context_asks_for_a_theological_reading(self):
+        """The pages are handed over with the frame that reads them back.
+
+        A list of titles is an index: the answer comes from what each page
+        holds on the question, said in its own authority, with its weight
+        marked. Without the frame the model summarises the pages instead.
+        """
+        decision = self.router.route("qu'est-ce que l'abrogation du Coran",
+                                     vault=self.vault)
+        context = decision["context"]
+        self.assertIn("[READING]", context)
+        self.assertIn("Name the subject", context)
+        self.assertIn("Tradition", context)
+        self.assertIn("what is defined", context)
+        self.assertIn("disputed", context)
 
     def test_a_question_that_is_not_the_vault_s_business_is_left_alone(self):
         for query in ("quelle heure est-il", "mets une alarme dans 10 minutes",

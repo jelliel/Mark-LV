@@ -117,6 +117,24 @@ def _fmt_semantic(resp) -> str:
     return "\n".join(lines)
 
 
+def _reading_frame() -> str:
+    """La façon dont ce que le brain a rendu doit être relu.
+
+    Le cadre appartient au routeur — un seul comportement pour tous les
+    chemins qui puisent dans le vault. S'il ne se charge pas, la recherche
+    rend ses résultats quand même : une instruction perdue n'est pas une
+    recherche en échec.
+    """
+    tb = _theology_brain()
+    if tb is None:
+        return ""
+    try:
+        return str(tb.vault_router().READING_FRAME or "")
+    except Exception as e:
+        print(f"[Xerj] reading frame unavailable: {e}")
+        return ""
+
+
 def _fallback(query: str, reason: str, player=None, speak=None) -> str:
     bridge = _theology_brain()
     if bridge is None:
@@ -259,7 +277,9 @@ def xerj_search(parameters: dict, player=None, speak=None) -> str:
                 lines = [f"- {h.get('_score', 0):.2f} — "
                          f"{_clip(((h.get('_source') or {}).get('body')) or '(passage)')}"
                          for h in hits]
-                return "Passages (sources brutes) :\n" + "\n".join(lines)
+                text = "Passages (sources brutes) :\n" + "\n".join(lines)
+                frame = _reading_frame()
+                return text + ("\n\n" + frame if frame else "")
             resp = _http("POST", f"/{_WIKI_INDEX}/_search", {
                 "size": limit,
                 "query": {"semantic": {"field": "body", "query": query}},
@@ -267,7 +287,8 @@ def xerj_search(parameters: dict, player=None, speak=None) -> str:
             out = _fmt_semantic(resp)
             if out.startswith("Aucun passage"):
                 return _maybe_auto_research(out, query, player, speak)
-            return out
+            frame = _reading_frame()
+            return out + ("\n\n" + frame if frame else "")
         except Exception as e:
             return _fallback(query, str(e), player=player, speak=speak)
 

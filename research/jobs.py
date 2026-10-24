@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import config, engine, store
+from . import config, engine, reading as reading_mod, store
 
 TERMINAL = ("done", "failed", "cancelled")
 _MAX_JOBS = 12
@@ -34,6 +34,7 @@ _STAGE_LABEL = {
     "researching": "recherche",
     "analysing": "analyse",
     "critiquing": "critique",
+    "reading": "lecture",
     "writing": "rédaction",
     "done": "terminé",
     "failed": "échec",
@@ -142,13 +143,7 @@ def announce(run, player=None, speak=None, voice: bool = True) -> None:
         return
     try:
         if done:
-            speak(
-                f"[RESEARCH_DONE] The research on '{run.title}' finished. "
-                f"{len(run.sources)} sources were gathered and the report is on "
-                f"screen. Tell the user the three most important findings in "
-                f"their own language, one short sentence each, then say the "
-                f"full report is at {run.report_path}. Do not read the report "
-                f"aloud.")
+            speak(_done_text(run))
         elif run.status == "cancelled":
             speak(f"[RESEARCH_DONE] The research on '{run.title}' was cancelled "
                   f"after {len(run.sources)} sources. The notes are saved and can "
@@ -159,6 +154,39 @@ def announce(run, player=None, speak=None, voice: bool = True) -> None:
                   f"run can be resumed.")
     except Exception as e:
         print(f"[Research] could not announce completion: {e}")
+
+
+def _done_text(run) -> str:
+    """What the model is told when a run finishes.
+
+    A theological run carries a reading — the subject, each item in the
+    authority it speaks with, each with its weight marked — composed by the
+    engine and CHECKED before it got here (research/reading.py). So the model
+    does not summarise the report: it relays the reading, in the user's own
+    language, and the report is named as the document behind it.
+
+    A run without one is announced as it always was: the findings, in short.
+    """
+    if reading_mod.carried(run):
+        text = reading_mod.render_speech(reading_mod.for_run(run),
+                                         reading_mod.language_of(run))
+        return (
+            f"[RESEARCH_DONE] The research on '{run.title}' finished. "
+            f"{len(run.sources)} sources were gathered and the report is on "
+            f"screen. Give the user this reading of what it established, in "
+            f"their own language — not a summary of the report, and not its "
+            f"wording. Say the subject first, then each item in turn, with the "
+            f"authority it speaks with and its weight, then what the reading "
+            f"does not settle. Add nothing the reading does not say.\n\n{text}\n\n"
+            f"Then say the full report is at {run.report_path}. Do not read the "
+            f"report aloud.")
+    return (
+        f"[RESEARCH_DONE] The research on '{run.title}' finished. "
+        f"{len(run.sources)} sources were gathered and the report is on "
+        f"screen. Tell the user the three most important findings in "
+        f"their own language, one short sentence each, then say the "
+        f"full report is at {run.report_path}. Do not read the report "
+        f"aloud.")
 
 
 def _finish(run, player, speak, voice: bool,

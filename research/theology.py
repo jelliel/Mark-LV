@@ -58,7 +58,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from . import config, jobs, vocab
+from . import config, jobs, reading as reading_mod, vocab
 
 _BRIDGE = None
 _ROUTER = None
@@ -517,13 +517,27 @@ def ingest(run, vault: Path | str | None = None) -> str:
         f"sources, {date.today().isoformat()}). Run `{run.id}` — rapport complet : "
         f"`{run.report_path}`")
 
+    # The reading goes FIRST, ahead of the attribution and the report itself.
+    # A vault answer quotes the beginning of a page, so a reading buried after
+    # the front-matter of a five-section report is a reading nobody will ever
+    # hear — and the page is consulted on exactly the subject the reading
+    # settles. It is the same checked structure the spoken announcement
+    # carries (research/reading.py), rendered for the page rather than the ear.
+    reading = reading_mod.render_markdown(reading_mod.for_run(run),
+                                          reading_mod.language_of(run))
+    # The report carries the same block, further down and under the TL;DR. Take
+    # it out of the body rather than file it twice: one page, one reading.
+    if reading and reading in body:
+        body = re.sub(r"\n{3,}", "\n\n", body.replace(reading, "", 1)).strip()
+    text = "\n\n".join(part for part in (reading, attribution, body) if part)
+
     try:
         # `_action_write` rather than `run()`: the vault is passed explicitly
         # (the tests use a temporary one) and the plugin wrapper adds nothing.
         out = _bridge()._action_write(_vault(vault), {
             "kind": "synthesis",
             "title": title,
-            "text": attribution + "\n\n" + body,
+            "text": text,
             "sources": ", ".join(urls[:12]),
             "tags": "auto-research, deep-research",
         })

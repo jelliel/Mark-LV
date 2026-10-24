@@ -72,6 +72,13 @@ def _wants_vault(params: dict) -> bool:
     return False
 
 
+# A run filed into the vault must be governed by the theology discipline, or
+# the vault would receive a report that never learned to tell a council's
+# definition from a scholar's reading of it — and the synthesis page it becomes
+# would carry no reading at all. Requesting the skill is what composes one.
+_VAULT_SKILLS = ("sourced-brief", "theology-source-critique")
+
+
 def _limit(params: dict, default: int = 8) -> int:
     try:
         return max(1, min(30, int(params.get("limit") or default)))
@@ -96,8 +103,12 @@ def deep_research(parameters: dict, player=None, speak=None) -> str:
         raw_skills = params.get("skills") or []
         if isinstance(raw_skills, str):
             raw_skills = [s.strip() for s in raw_skills.split(",") if s.strip()]
+        filed = _wants_vault(params)
+        if filed:
+            raw_skills = list(raw_skills) + [s for s in _VAULT_SKILLS
+                                             if s not in raw_skills]
         try:
-            on_done = research.theology.ingest if _wants_vault(params) else None
+            on_done = research.theology.ingest if filed else None
             run_id, error = jobs.start(
                 topic, depth=str(params.get("depth") or "standard"),
                 language=language, skills=raw_skills,
@@ -106,11 +117,11 @@ def deep_research(parameters: dict, player=None, speak=None) -> str:
             return f"Impossible de démarrer la recherche : {type(e).__name__}: {e}"
         if error:
             return error
-        filed = (" Le rapport sera versé dans le vault théologique."
-                 if _wants_vault(params) else "")
+        note = (" Le rapport sera versé dans le vault théologique, comme page "
+                "de synthèse." if filed else "")
         return (f"Recherche profonde lancée ({str(params.get('depth') or 'standard')}) "
                 f"sur « {topic} ». Run {run_id}. Je te préviens dès que le rapport "
-                f"est prêt — tu peux continuer à me parler entre-temps.{filed}")
+                f"est prêt — tu peux continuer à me parler entre-temps.{note}")
 
     if action == "status":
         active = jobs.active()
