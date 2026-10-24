@@ -433,8 +433,14 @@ def learn_with_agents(paths, profiles, player=None, step=None) -> str:
     # Self-improvement, batch end: the team's doc re-renders and the prompt
     # mirror learns the new state, so the next question about these topics
     # gets a grounded answer without any re-ingestion.
+    # refresh_context_mirror lives in theology_brain (no args) — and `bridge`
+    # IS the theology_brain module, loaded by path.
     self_doc = refresh_self_knowledge(bridge, profiles, recent=processed)
-    mirror = refresh_context_mirror(bridge, pages, new_titles, len(paths))
+    mirror = ""
+    try:
+        mirror = bridge.refresh_context_mirror()
+    except Exception as e:
+        print(f"[Agents] mirror refresh failed: {e}")
     summary = (f"Apprentissage par agents ({len(profiles)} × {len(paths)} source(s)) : "
                f"{pages} page(s) écrite(s) — {totals['source']} source(s), "
                f"{totals['entity']} entité(s), {totals['concept']} concept(s).")

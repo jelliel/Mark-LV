@@ -1984,13 +1984,14 @@ def _theology_learn(paths: list[Path], params: dict, player=None, step=None,
 
     # Batch end: refresh the team's self-knowledge doc (no agent profiles to
     # report here) and teach the prompt mirror what the brain just learned.
+    # refresh_context_mirror lives in theology_brain (no args) — and `bridge`
+    # IS the theology_brain module, loaded by path.
     self_doc, mirror = "", ""
     try:
         _agents_mod = _load_theology_agents()
         if _agents_mod is not None:
             self_doc = _agents_mod.refresh_self_knowledge(bridge, [])
-            mirror = _agents_mod.refresh_context_mirror(
-                bridge, pages, new_titles, len(paths))
+        mirror = bridge.refresh_context_mirror()
     except Exception as e:
         print(f"[FileProcessor] self-knowledge refresh failed: {e}")
 
