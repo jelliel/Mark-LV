@@ -15,28 +15,27 @@ current = m.group(1)
 parts = current.split(".")
 new = f"{parts[0]}.{parts[1]}.{int(parts[2])+1}"
 
-# Update version
 content = re.sub(rf'THEOLOGICUS\s+v{re.escape(current)}', f'THEOLOGICUS v{new}', content)
 ui_py.write_text(content, encoding="utf-8")
 
 print(f"Version: {current} -> {new}")
 
 # Git operations
-cmds = [
+for cmd in [
     ["git", "add", "ui.py"],
     ["git", "commit", "-m", f"Bump version to THEOLOGICUS v{new}"],
     ["git", "push", "jelliel", "HEAD"],
-    ["git", "tag", "-d", f"v{current}"],
-    ["git", "push", "jelliel", f":refs/tags/v{current}"],
-    ["git", "tag", "-a", f"v{new}", "-m", f"Theologicus v{new}"],
-    ["git", "push", "jelliel", f"v{new}"],
-]
+]:
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"ERROR: {' '.join(cmd)} -> {r.stderr.strip()}"); sys.exit(1)
 
-for cmd in cmds:
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0 and 'Already up-to-date' not in result.stdout and 'nothing to commit' not in result.stdout.lower():
-        print(f"ERROR in {' '.join(cmd)}:")
-        print(result.stderr)
-        sys.exit(1)
+# Handle tags - delete old, create new, push
+subprocess.run(["git", "tag", "-d", f"v{current}"], capture_output=True)
+subprocess.run(["git", "push", "jelliel", f":refs/tags/v{current}"], capture_output=True)
+subprocess.run(["git", "tag", "-d", f"v{new}"], capture_output=True)
+subprocess.run(["git", "push", "jelliel", f":refs/tags/v{new}"], capture_output=True)
+subprocess.run(["git", "tag", "-a", f"v{new}", "-m", f"Theologicus v{new}"], check=True)
+subprocess.run(["git", "push", "jelliel", f"v{new}"], check=True)
 
-print(f"SUCCESS: Pushed THEOLOGICUS v{new} to jelliel/Mark-LV")
+print(f"SUCCESS: THEOLOGICUS v{new} pushed to jelliel/Mark-LV")
