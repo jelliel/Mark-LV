@@ -70,3 +70,10 @@ desktop.ini
 logs/
 downloads/
 screenshots/
+
+dist/
+build/
+*.spec
+*.log
+__pycache__/
+*.egg-info/
