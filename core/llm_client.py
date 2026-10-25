@@ -246,7 +246,7 @@ def call_llm(
             "model":      model,
             "messages":   messages,
             "stream":     False,
-            "max_tokens": 150,
+            "max_tokens": 4096,
         }
         if tools:
             payload["tools"]       = tools
@@ -387,7 +387,7 @@ def _stream_openai(
         "model":      model,
         "messages":   messages,
         "stream":     True,
-        "max_tokens": 150,
+        "max_tokens": 4096,
     }
     if tools:
         payload["tools"]       = tools

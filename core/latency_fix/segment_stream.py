@@ -1,5 +1,5 @@
 """
-Latency fix for Mark-LV voice assistant
+Latency fix for Theologicus voice assistant
 Implements per-sentence streaming LLM→TTS→playback pipeline
 Based on natural-convo.md specification
 """
@@ -279,7 +279,7 @@ class AudioSegmentPlayer:
             # Audio stop would happen here
             logger.info("Interrupted audio playback")
 
-# Integration helpers for existing Mark-LV code
+# Integration helpers for existing Theologicus code
 
 def create_latency_fix_components(websocket_send_func: Callable,
                                 tts_fetch_func: Callable[[str], Any],

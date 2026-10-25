@@ -495,6 +495,8 @@ def _jsonify(value):
         return {str(k): _jsonify(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_jsonify(v) for v in value]
+    if isinstance(value, set):
+        return [_jsonify(v) for v in value]
     return value
 
 def save_theological_metadata(metadata: dict) -> None:

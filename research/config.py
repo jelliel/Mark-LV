@@ -20,7 +20,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 
-DEFAULT_FOLDER = "Mark LV Research"
+DEFAULT_FOLDER = "Theologicus Research"
 
 DEFAULTS = {
     "research_max_parallel": 4,
@@ -108,7 +108,7 @@ def skills_dir(root: Path | None = None) -> Path:
 
 
 def bundled_skills_dir() -> Path:
-    """Skills that ship with the app, in Mark LV Research/skills' shadow.
+    """Skills that ship with the app, in Theologicus Research/skills' shadow.
 
     A user skill with the same name wins — that is how you tune one of these
     without forking the repository."""

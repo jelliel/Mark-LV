@@ -1,5 +1,5 @@
 """
-MARK LV action — deep research (the DeerFlow loop, natively).
+Theologicus action — deep research (the DeerFlow loop, natively).
 
 One tool, several verbs, because a voice user should not have to learn a
 different tool for each stage of the same job:
