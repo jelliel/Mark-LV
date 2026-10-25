@@ -468,9 +468,16 @@ class DashboardServer:
         self._pending_keys: dict[str, float] = {}
         self._device_sessions: dict[str, dict] = {}  # device_token → {session_key}
         self._phone_audio_queue: asyncio.Queue    = asyncio.Queue(maxsize=200)
+        # ── Mind Map data (shared with observer websockets) ──────────────────────
+        self._mind_regions   = {}
+        self._mind_nodes     = {}
+        self._mind_edges     = {}
+        self._mind_stats     = {"memory_total": 0, "memory_shown": 0, "sources": 0}
+        self._active_agents  = {}   # agent_name -> monotonic timestamp when last fired
         self._uploads_dir                 = UPLOADS_DIR
         self._login_html                  = _read("login.html")
         self._app_html                    = _read("app.html")
+        self._mind_html                   = _read("static/mind/three.html")
         self.app                          = self._build_app()
 
     # ── one-time key management ───────────────────────────────────────────
@@ -532,6 +539,30 @@ class DashboardServer:
             except Exception:
                 dead.add(ws)
         self._clients -= dead
+
+    async def broadcast_mind_map(self) -> None:
+        """Public: push current mind-map state to all observer WS clients."""
+        msg = {
+            "type": "mind_map",
+            "regions": self._mind_regions,
+            "nodes": self._mind_nodes,
+            "edges": self._mind_edges,
+            "stats": self._mind_stats,
+        }
+        dead: set[WebSocket] = set()
+        for ws in list(self._clients):
+            try:
+                await ws.send_json(msg)
+            except Exception:
+                dead.add(ws)
+        self._clients -= dead
+
+    def set_mind_map(self, skeleton: dict) -> None:
+        """Store a freshly built skeleton. Callers broadcast afterwards."""
+        self._mind_regions = skeleton.get("regions", [])
+        self._mind_nodes   = skeleton.get("nodes", [])
+        self._mind_edges   = skeleton.get("edges", [])
+        self._mind_stats   = skeleton.get("stats", {})
 
     # ── FastAPI app ───────────────────────────────────────────────────────
 
@@ -691,6 +722,57 @@ class DashboardServer:
                 self._wake_callback()
             return JSONResponse({"ok": True})
 
+        @app.get("/api/mind-map")
+        async def mind_map() -> dict:
+            """Skeleton: regions, nodes, edges, stats for the mind-map scene."""
+            # Auto-build if empty
+            if not self._mind_nodes:
+                try:
+                    from .mindmap import build_skeleton
+                    from actions import theology_agents as _agents
+                    import importlib.util
+                    _base = Path(__file__).resolve().parent.parent
+                    _spec = importlib.util.spec_from_file_location(
+                        "panel_fp", _base / "actions" / "file_processor.py")
+                    _fp = importlib.util.module_from_spec(_spec)
+                    _spec.loader.exec_module(_fp)
+                    _bridge = _fp._theology_brain_module()
+                    _agents_mod = _fp._load_theology_agents()
+                    _profiles = [p for p in (_base / "vault" / "profiles").glob("*.md") if p.is_file()] if (
+                        _base / "vault" / "profiles").is_dir() else []
+                    _skeleton = build_skeleton(
+                        bridge=_bridge, vault=_bridge._vault(),
+                        profiles=_profiles, registry={}, session_log=None)
+                    self.set_mind_map(_skeleton)
+                except Exception as e:
+                    print(f"[MindMap] Auto-build failed: {e}")
+            return {
+                "regions": self._mind_regions,
+                "nodes": self._mind_nodes,
+                "edges": self._mind_edges,
+                "stats": self._mind_stats,
+            }
+
+        @app.get("/mind/three.html", response_class=HTMLResponse)
+        async def mind_map_page():
+            """Serve the living-mind 3D map page."""
+            return HTMLResponse(self._mind_html)
+
+        # Serve JS modules for the 3D mind map
+        _mind_js_files = {
+            "data.js": "static/mind/data.js",
+            "regions.js": "static/mind/regions.js",
+            "nodes.js": "static/mind/nodes.js",
+            "edges.js": "static/mind/edges.js",
+        }
+        for _js_name, _js_path in _mind_js_files.items():
+            _js_content = _read(_js_path)
+
+            @app.get(f"/mind/{_js_name}")
+            async def _make_js_handler(_content=_js_content, _type="text/javascript"):
+                from starlette.responses import Response
+                return Response(content=_content, media_type=_type)
+
         # ── Phone mic real-time audio → Gemini Live ──────────────────────────
 
         @app.websocket("/ws/phone-audio")
@@ -718,6 +800,32 @@ class DashboardServer:
                 asyncio.create_task(self.broadcast(
                     {"type": "sys", "text": "Phone microphone stopped."}
                 ))
+
+        # ── Observer: read-only mind map WebSocket ─────────────────────────────
+        @app.websocket("/ws/observe")
+        async def observe_ws(websocket: WebSocket):
+            """Read-only observer — frontend only ever receives; never sends."""
+            await websocket.accept()
+            self._clients.add(websocket)
+            # send current mind-map state
+            try:
+                await websocket.send_json({
+                    "type": "mind_map",
+                    "regions": self._mind_regions,
+                    "nodes": self._mind_nodes,
+                    "edges": self._mind_edges,
+                    "stats": self._mind_stats,
+                })
+            except Exception:
+                pass
+            try:
+                while True:
+                    data = await websocket.receive_json()
+                    break  # observer sockets never send meaningful payloads
+            except WebSocketDisconnect:
+                pass
+            finally:
+                self._clients.discard(websocket)
 
         # ── File sharing ──────────────────────────────────────────────────────
 

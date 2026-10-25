@@ -501,11 +501,24 @@ def check_drift(bridge, profiles) -> list[str]:
                 findings.append(f"Dead reference [[{link}]]")
 
         # Check for ghost agent names (mentioned but not in profiles)
+        # Only match capitalized multi-word names that look like agents (skip common words)
+        _SKIP_WORDS = {"source", "temperature", "token", "température", "exégèse",
+                        "exegese", "biblique", "texte", "analyse", "comme", "dans",
+                        "les", "le", "la", "de", "et", "à", "a", "est", "sont",
+                        "une", "pour", "avec", "sans", "plus", "moins", "tout",
+                        "ce", "ces", "nous", "vous", "ils", "elles", "il", "elle",
+                        "self-knowledge", "markdown", "agent"}
         agent_names = {p.name.lower() for p in profiles}
-        mentioned = re.findall(r"\*\*([^*]+?)\*\*", content)
+        mentioned = re.findall(r"\*\*([A-Z][a-zA-ZÀ-ÿ\s]+?)\*\*", content)
         for name in mentioned:
-            if name.lower() not in agent_names and "agent" not in name.lower():
-                findings.append(f"Unknown agent mentioned: {name}")
+            nl = name.strip().lower()
+            if nl in agent_names:
+                continue
+            if any(w in nl for w in _SKIP_WORDS):
+                continue
+            if len(name.strip()) < 3:
+                continue
+            findings.append(f"Unknown agent mentioned: {name.strip()}")
 
         # Check page counts match
         try:

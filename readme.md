@@ -1,7 +1,7 @@
-# ⚙️ MARK LV (55)
-### The Ultimate Cross-Platform Personal AI Assistant — By FatihMakes
+# ⚙️ THEOLOGICUS (55)
+### The Ultimate Cross-Platform Personal AI Assistant — By Theologicus
 
-> 📺 **[Watch the full setup video on YouTube](https://www.youtube.com/@FatihMakes)**
+> 📺 **[Watch the full setup video on YouTube](https://www.youtube.com/@Theologicus)**
 
 A real-time voice AI that can hear, see, speak, and control your computer — on any OS. Supports Windows, macOS, and Linux. Built on the Gemini Live API for native audio streaming, delivering zero subscriptions and total digital autonomy.
 
@@ -550,8 +550,8 @@ It is held in memory only, deliberately: writing it to disk would make a fresh l
 ## ⚡ Quick Start
 
 ```bash
-git clone https://github.com/FatihMakes/Mark-LV.git
-cd Mark-LV
+git clone https://github.com/Theologicus/Theologicus.git
+cd Theologicus
 python setup.py        # installs deps for YOUR OS + the browser automation engine
 python main.py
 ```
@@ -688,5 +688,5 @@ Engineered by a developer building a real-world JARVIS-style assistant.
 
 | Platform | Link |
 | --- | --- |
-| YouTube | [@FatihMakes](https://www.youtube.com/@FatihMakes) |
-| Instagram | [@fatihmakes](https://www.instagram.com/fatihmakes) |
+| YouTube | [@Theologicus](https://www.youtube.com/@Theologicus) |
+| Instagram | [@theologicus](https://www.instagram.com/ambassadeur) |

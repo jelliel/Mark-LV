@@ -85,7 +85,7 @@ def _read_full_config() -> dict:
 
 # Single source of truth for the release name — the window title, the header
 # badge and the readme must never disagree again.
-APP_VERSION  = "MARK LV"
+APP_VERSION  = "THEOLOGICUS"
 APP_PROTOCOL = APP_VERSION.split()[-1]
 
 _DEFAULT_W, _DEFAULT_H = 980, 700
@@ -3025,8 +3025,7 @@ class MainWindow(QMainWindow):
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
 
-        self._left_panel = self._build_left_panel()
-        body.addWidget(self._left_panel, stretch=0)
+        # Left panel removed - orb visualization replaces it
 
         # Center column: HUD + resizable content panel via QSplitter
         self.hud = HudCanvas(face_path, _display)
@@ -3898,6 +3897,8 @@ class MainWindow(QMainWindow):
         self._fit_video()
 
     def _update_metrics(self):
+        # Sys monitor removed - orb visualization replaces left panel
+        return
         snap = _metrics.snapshot()
 
         # CPU
@@ -4781,7 +4782,7 @@ class MainWindow(QMainWindow):
         pw, ph = 1100, 680
         x = (cw.width()  - pw) // 2
         y = (cw.height() - ph) // 2
-        self._brain_panel = BrainPanel(cw)
+        self._brain_panel = BrainPanel(self)
         self._brain_panel.setFixedSize(pw, ph)
         self._brain_panel.setGeometry(x, y, pw, ph)
         self._brain_panel.set_data(data)
@@ -4970,7 +4971,7 @@ class MainWindow(QMainWindow):
 
         lay.addWidget(_fl("[F4] Mute  ·  [F11] Fullscreen"))
         lay.addStretch()
-        lay.addWidget(_fl("By FatihMakes", C.PRI_DIM))
+        lay.addWidget(_fl("By Ambassadeur", C.PRI_DIM))
         return w
 
     def _on_file_selected(self, path: str):
@@ -5962,160 +5963,89 @@ _BRAIN_DIM  = "#556"
 _FONT_H     = "Courier New"   # matches the sci-fi mono look
 
 
-class BrainPanel(QWidget):
-    """Embedded second-brain dashboard — matches theologicus.html colour palette."""
 
-    _close_sig = pyqtSignal()
+import importlib.util
+from pathlib import Path
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(f"""
-            BrainPanel {{ background: {_BRAIN_BG}; }}
-        """)
-        self._data: dict = {}
 
-        # ── layout ──────────────────────────────────────────────────────────
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
+def _load_brain_modules():
+    """Load theology brain modules for the BrainPanel."""
+    actions_dir = Path(__file__).resolve().parent / 'actions'
+    spec = importlib.util.spec_from_file_location(
+        'panel_file_processor', actions_dir / 'file_processor.py')
+    fp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fp)
+    bridge = fp._theology_brain_module()
+    agents = fp._load_theology_agents()
+    return agents, bridge
 
-        # Header
-        hdr = QHBoxLayout()
-        hdr.setContentsMargins(10, 8, 10, 6)
-        self._hdr_lbl = QLabel("◈  THEOLOGICUS — SECOND BRAIN")
-        self._hdr_lbl.setFont(QFont(_FONT_H, 13, QFont.Weight.Bold))
-        self._hdr_lbl.setStyleSheet(f"color: {_BRAIN_CYAN}; background: transparent;")
-        hdr.addWidget(self._hdr_lbl)
-        hdr.addStretch()
-        self._clock_lbl = QLabel("--:--:--")
-        self._clock_lbl.setFont(QFont(_FONT_H, 10))
-        self._clock_lbl.setStyleSheet(f"color: {_BRAIN_CYAN}; background: transparent;")
-        hdr.addWidget(self._clock_lbl)
-        self._refresh_btn = QPushButton("⟳  UPDATE")
-        self._refresh_btn.setFont(QFont(_FONT_H, 8, QFont.Weight.Bold))
-        self._refresh_btn.setFixedHeight(26)
-        self._refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._refresh_btn.setStyleSheet(f"""
-            QPushButton {{ background: transparent; color: {_BRAIN_CYAN};
-                border: 1px solid {_BRAIN_BRD}; border-radius: 3px; }}
-            QPushButton:hover {{ background: rgba(0,240,255,0.12); border-color: {_BRAIN_CYAN}; }}
-        """)
-        self._refresh_btn.clicked.connect(lambda: self._close_sig.emit())
-        hdr.addWidget(self._refresh_btn)
-        x_btn = QPushButton("✕")
-        x_btn.setFixedSize(24, 24)
-        x_btn.setFont(QFont(_FONT_H, 9))
-        x_btn.setStyleSheet(f"color: {_BRAIN_DIM}; background: transparent; border: none;")
-        x_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        x_btn.clicked.connect(self._close_sig.emit)
-        hdr.addWidget(x_btn)
-        lay.addLayout(hdr)
 
-        # Separator
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"background: {_BRAIN_BRD};")
-        lay.addWidget(sep)
+def _collect_brain_data(agents, bridge, profiles) -> dict:
+    """Collect vault data for BrainPanel display."""
+    vault = bridge._vault()
+    counts = {kind: 0 for kind in ('sources', 'entities', 'concepts', 'synthesis')}
+    contributions = agents._agent_contribution_counts(bridge, vault, profiles)
+    for dirname, p in bridge._iter_pages(vault):
+        counts[dirname] = counts.get(dirname, 0) + 1
+    n_raw = len([p for p in (vault / 'raw').glob('*') if p.is_file()])
+    log_tail = ''
+    logp = vault / 'wiki' / 'log.md'
+    if logp.exists():
+        lines = logp.read_text(encoding='utf-8', errors='replace').strip().splitlines()
+        log_tail = chr(10).join(lines[-14:])
+    doc = vault / agents._SELF_DOC
+    doc_state = f'présent ({doc})' if doc.exists() else 'ABSENT — un rafraîchissement le créera'
+    findings = agents.check_drift(bridge, profiles)
+    total = sum(counts.values())
+    return {
+        'path': str(vault),
+        'total': total, 'counts': counts, 'n_raw': n_raw,
+        'profiles': [p.name for p in profiles] if profiles else [],
+        'contributions': contributions,
+        'log_tail': log_tail, 'doc_state': doc_state, 'findings': findings,
+    }
 
-        # Body: radar + vault info only
-        self._radar_canvas = RadarCanvas(self)
-        self._radar_canvas.setMinimumHeight(280)
-        self._radar_canvas.setFixedHeight(340)
-        lay.addWidget(self._radar_canvas)
-        self._vault_info = VaultInfoPanel()
-        lay.addWidget(self._vault_info)
-        lay.addStretch()
-
-        # Footer
-        ftr = QLabel("  Theologicus Brain Panel  ")
-        ftr.setFont(QFont(_FONT_H, 7))
-        ftr.setStyleSheet(f"color: {_BRAIN_DIM}; background: transparent;")
-        lay.addWidget(ftr)
-
-        # Clock ticker
-        self._tick_tmr = QTimer(self)
-        self._tick_tmr.timeout.connect(self._tick)
-        self._tick_tmr.start(1000)
-        self._tick()
-
-    def _tick(self):
-        import time as _t
-        self._clock_lbl.setText(_t.strftime("%H:%M:%S"))
-        self._radar_canvas.update()
-        self._tick_tmr.start(1000)
-
-    def set_data(self, data: dict):
-        """Called from main thread after brain_panel runs."""
-        self._data = data
-        self._vault_info.set_data(data)
-        self._radar_canvas.set_data(data)
 
 
 class RadarCanvas(QFrame):
-    """Living Mind radar — shows agent activity in real time.
-
-    Inspired by the "living mind" vision: a central core (Theologicus),
-    agent nodes orbiting at fixed positions, and animated pulses when
-    an agent is processing a file. Pure paintEvent, no WebGL needed.
-    """
-
-    # One colour per agent slot; colours rotate for each new agent.
     _AGENT_COLORS = [
-        "#00ff41",   # green
-        "#ff2a2a",   # red
-        "#00f0ff",   # cyan
-        "#ffaa00",   # amber
-        "#a78bfa",   # violet
-        "#e88fb3",   # rose
-        "#67e8f9",   # light cyan
-        "#f5a524",   # orange
+        "#00ff41", "#ff2a2a", "#00f0ff", "#ffaa00",
+        "#a78bfa", "#e88fb3", "#67e8f9", "#f5a524",
     ]
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(280)
         self._phase = 0.0
-        # {agent_name: {"active": bool, "pulse_t": float}}
         self._agents: dict[str, dict] = {}
-        # pulses: list of (t, from_angle, to_angle, color)
         self._pulses: list[tuple[float, float, float, str]] = []
 
     def fire(self, agent: str, color: str | None = None):
-        """Called when an agent starts/stops processing. The caller passes
-        the agent name and whether it is currently active."""
         c = color or self._agent_color(agent)
         if agent not in self._agents:
             self._agents[agent] = {"active": False, "pulse_t": 0.0}
         self._agents[agent]["active"] = True
-        # add a pulse from core outward
         angle = self._agent_angle(agent)
         self._pulses.append((0.0, angle, angle, c))
         self.update()
 
     def stop(self, agent: str):
-        """Called when an agent finishes processing."""
         if agent in self._agents:
             self._agents[agent]["active"] = False
             angle = self._agent_angle(agent)
-            # inward pulse
             self._pulses.append((0.0, angle, angle, _BRAIN_CYAN))
         self.update()
 
     def set_data(self, data: dict):
-        """Pre-populate with known agent profiles (names + colors)."""
         for p in data.get("profiles", []):
             if p not in self._agents:
                 self._agents[p] = {"active": False, "pulse_t": 0.0}
         self.update()
 
-    # ── private helpers ──────────────────────────────────────────────────────
-
     def _agent_color(self, name: str) -> str:
-        idx = hash(name) % len(self._AGENT_COLORS)
-        return self._AGENT_COLORS[idx]
+        return self._AGENT_COLORS[hash(name) % len(self._AGENT_COLORS)]
 
     def _agent_angle(self, name: str) -> float:
-        """Deterministic angular position for an agent, evenly spaced."""
         names = sorted(self._agents.keys())
         if name not in names:
             return 0.0
@@ -6123,7 +6053,7 @@ class RadarCanvas(QFrame):
         return (i / max(len(names), 1)) * 2 * math.pi - math.pi / 2
 
     def _paint(self, event):
-        from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
+        from PyQt6.QtGui import QPainter, QColor, QPen
         from PyQt6.QtCore import Qt, QRect
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -6131,50 +6061,34 @@ class RadarCanvas(QFrame):
         w, h = self.width(), self.height()
         cx, cy = w // 2, h // 2
         r = min(cx, cy) - 16
-
-        # ── concentric rings ───────────────────────────────────────────────
         for frac, alpha in ((1.0, 60), (0.72, 45), (0.45, 30), (0.2, 20)):
             col = QColor(_BRAIN_CYAN); col.setAlpha(alpha)
             p.setPen(QPen(col, 1, Qt.PenStyle.DashLine))
             pr = int(r * frac)
             p.drawEllipse(cx, cy, pr * 2, pr * 2)
-
-        # ── sweep line ─────────────────────────────────────────────────────
         angle = math.radians(self._phase)
         ex = cx + r * math.cos(angle)
         ey = cy + r * math.sin(angle)
         sweep = QColor(_BRAIN_CYAN); sweep.setAlpha(100)
         p.setPen(QPen(sweep, 1))
         p.drawLine(cx, cy, int(ex), int(ey))
-
-        # ── active agent nodes ─────────────────────────────────────────────
         for name, state in sorted(self._agents.items()):
             ang = self._agent_angle(name)
-            # radial distance: active = near outer ring, idle = middle ring
             dist_frac = 0.85 if state["active"] else 0.55
             nr = int(r * dist_frac)
             nx = int(cx + nr * math.cos(ang))
             ny = int(cy + nr * math.sin(ang))
             col = QColor(self._agent_color(name))
-
-            # glow halo when active
             if state["active"]:
                 halo = QColor(col); halo.setAlpha(40)
-                p.setPen(QPen(halo, 4))
-                p.setBrush(halo)
+                p.setPen(QPen(halo, 4)); p.setBrush(halo)
                 p.drawEllipse(nx, ny, 14, 14)
             col.setAlpha(255 if state["active"] else 100)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(col)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(col)
             p.drawEllipse(nx - 4, ny - 4, 8, 8)
-
-            # label below dot
-            p.setPen(col)
-            p.setFont(QFont(_FONT_H, 7))
+            p.setPen(col); p.setFont(QFont(_FONT_H, 7))
             p.drawText(QRect(nx - 30, ny + 6, 60, 12),
                        Qt.AlignmentFlag.AlignCenter, name[:16])
-
-        # ── travel pulses ──────────────────────────────────────────────────
         import time as _t
         now = _t.monotonic()
         alive = []
@@ -6182,36 +6096,28 @@ class RadarCanvas(QFrame):
             elapsed = now - pt
             if elapsed > 1.2:
                 continue
-            t = elapsed / 1.2  # 0→1
-            # interpolate between core (r*0.15) and agent ring (r*0.85)
-            inner_r = int(r * 0.15)
-            outer_r = int(r * 0.85)
+            t = elapsed / 1.2
+            inner_r = int(r * 0.15); outer_r = int(r * 0.85)
             cr = int(inner_r + (outer_r - inner_r) * t)
-            px = cx + cr * math.cos(fa)
-            py = cy + cr * math.sin(fa)
+            px = cx + cr * math.cos(fa); py = cy + cr * math.sin(fa)
             pulse_c = QColor(pc); pulse_c.setAlpha(int(200 * (1 - t)))
-            p.setPen(QPen(pulse_c, 2))
-            p.setBrush(pulse_c)
+            p.setPen(QPen(pulse_c, 2)); p.setBrush(pulse_c)
             p.drawEllipse(int(px) - 3, int(py) - 3, 6, 6)
             alive.append((pt, fa, ta, pc))
         self._pulses = alive
-
-        # ── core text ──────────────────────────────────────────────────────
         p.setPen(QColor(_BRAIN_CYAN))
         p.setFont(QFont(_FONT_H, 10, QFont.Weight.Bold))
         p.drawText(QRect(cx - 55, cy - 12, 110, 24),
                    Qt.AlignmentFlag.AlignCenter, "THEOLOGICUS")
         p.end()
         self._phase = (self._phase + 1.5) % 360
-        self.update()   # keep animating
+        self.update()
 
     def paintEvent(self, event):
         self._paint(event)
 
 
 class VaultInfoPanel(QFrame):
-    """Vault summary panel shown below the radar."""
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet(f"""
@@ -6221,27 +6127,22 @@ class VaultInfoPanel(QFrame):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(10, 8, 10, 8)
         lay.setSpacing(3)
-
         self._total_lbl = QLabel("VAULT STATE")
         self._total_lbl.setFont(QFont(_FONT_H, 8, QFont.Weight.Bold))
         self._total_lbl.setStyleSheet(f"color: {_BRAIN_DIM}; background: transparent;")
         lay.addWidget(self._total_lbl)
-
         self._pages_lbl = QLabel("0 page(s)")
         self._pages_lbl.setFont(QFont(_FONT_H, 12, QFont.Weight.Bold))
         self._pages_lbl.setStyleSheet(f"color: {_BRAIN_CYAN}; background: transparent;")
         lay.addWidget(self._pages_lbl)
-
         self._counts_lbl = QLabel("")
         self._counts_lbl.setFont(QFont(_FONT_H, 8))
         self._counts_lbl.setStyleSheet(f"color: {_BRAIN_TXT}; background: transparent;")
         lay.addWidget(self._counts_lbl)
-
         self._raw_lbl = QLabel("")
         self._raw_lbl.setFont(QFont(_FONT_H, 8))
         self._raw_lbl.setStyleSheet(f"color: {_BRAIN_TXT}; background: transparent;")
         lay.addWidget(self._raw_lbl)
-
         self._drift_lbl = QLabel("")
         self._drift_lbl.setFont(QFont(_FONT_H, 8))
         lay.addWidget(self._drift_lbl)
@@ -6254,16 +6155,119 @@ class VaultInfoPanel(QFrame):
         self._counts_lbl.setText(
             f"Sources: {counts.get('sources', 0)} | Entités: {counts.get('entities', 0)}"
             f"\nConcepts: {counts.get('concepts', 0)} | Synthèses: {counts.get('synthesis', 0)}")
-        self._raw_lbl.setText(f"Raw sources: {data.get('n_raw', 0)}")
         doc_state = data.get("doc_state", "")
-        if doc_state:
-            self._raw_lbl.setText(f"{self._raw_lbl.text()}  ·  Doc: {doc_state}")
+        raw = data.get("n_raw", 0)
+        self._raw_lbl.setText(f"Raw sources: {raw}" + (f"  ·  Doc: {doc_state}" if doc_state else ""))
         if findings:
             self._drift_lbl.setStyleSheet(f"color: {_BRAIN_RED}; background: transparent;")
             self._drift_lbl.setText(f"⚠ Dérive ({len(findings)}): " + " | ".join(findings[:2]))
         else:
             self._drift_lbl.setStyleSheet(f"color: {_BRAIN_GRN}; background: transparent;")
             self._drift_lbl.setText("✓ Dérive: 0 — Doc aligné")
+
+
+class BrainPanel(QWidget):
+    """Embedded second-brain dashboard — matches theologicus.html colour palette."""
+
+    _close_sig = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            BrainPanel {{ background: {_BRAIN_BG}; }}
+        """)
+        self._data: dict = {}
+        self._agents, self._bridge = None, None
+
+        # ── layout ──────────────────────────────────────────────────────────
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+
+        # Header
+        hdr = QHBoxLayout()
+        hdr.setContentsMargins(10, 8, 10, 6)
+        self._hdr_lbl = QLabel('◈  THEOLOGICUS — SECOND BRAIN')
+        self._hdr_lbl.setFont(QFont(_FONT_H, 13, QFont.Weight.Bold))
+        self._hdr_lbl.setStyleSheet(f'color: {_BRAIN_CYAN}; background: transparent;')
+        hdr.addWidget(self._hdr_lbl)
+        hdr.addStretch()
+        self._clock_lbl = QLabel('--:--:--')
+        self._clock_lbl.setFont(QFont(_FONT_H, 10))
+        self._clock_lbl.setStyleSheet(f'color: {_BRAIN_CYAN}; background: transparent;')
+        hdr.addWidget(self._clock_lbl)
+        self._refresh_btn = QPushButton('⟳  UPDATE')
+        self._refresh_btn.setFont(QFont(_FONT_H, 8, QFont.Weight.Bold))
+        self._refresh_btn.setFixedHeight(26)
+        self._refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._refresh_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {_BRAIN_CYAN};
+                border: 1px solid {_BRAIN_BRD}; border-radius: 3px; }}
+            QPushButton:hover {{ background: rgba(0,240,255,0.12); border-color: {_BRAIN_CYAN}; }}
+        """)
+        self._refresh_btn.clicked.connect(self._on_refresh)
+        hdr.addWidget(self._refresh_btn)
+        x_btn = QPushButton('✕')
+        x_btn.setFixedSize(24, 24)
+        x_btn.setFont(QFont(_FONT_H, 9))
+        x_btn.setStyleSheet(f'color: {_BRAIN_DIM}; background: transparent; border: none;')
+        x_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        x_btn.clicked.connect(self._close_sig.emit)
+        hdr.addWidget(x_btn)
+        lay.addLayout(hdr)
+
+        # Separator
+        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f'background: {_BRAIN_BRD};')
+        lay.addWidget(sep)
+
+        # Body: radar + vault info only
+        self._radar_canvas = RadarCanvas(self)
+        self._radar_canvas.setMinimumHeight(280)
+        self._radar_canvas.setFixedHeight(340)
+        lay.addWidget(self._radar_canvas)
+        self._vault_info = VaultInfoPanel()
+        lay.addWidget(self._vault_info)
+        lay.addStretch()
+
+        # Footer
+        ftr = QLabel('  Theologicus Brain Panel  ')
+        ftr.setFont(QFont(_FONT_H, 7))
+        ftr.setStyleSheet(f'color: {_BRAIN_DIM}; background: transparent;')
+        lay.addWidget(ftr)
+
+        # Clock ticker
+        self._tick_tmr = QTimer(self)
+        self._tick_tmr.timeout.connect(self._tick)
+        self._tick_tmr.start(1000)
+        self._tick()
+
+    def _tick(self):
+        import time as _t
+        self._clock_lbl.setText(_t.strftime('%H:%M:%S'))
+        self._radar_canvas.update()
+        self._tick_tmr.start(1000)
+
+    def set_data(self, data: dict):
+        """Called from main thread after brain_panel runs."""
+        self._data = data
+        self._vault_info.set_data(data)
+        self._radar_canvas.set_data(data)
+
+    def _on_refresh(self):
+        """Refresh vault data and update display."""
+        if self._agents is None or self._bridge is None:
+            self._agents, self._bridge = _load_brain_modules()
+        if self._agents is None or self._bridge is None:
+            return
+        try:
+            self._bridge.run({'action': 'init'})
+        except Exception:
+            pass
+        profiles = self._agents.discover_agents()
+        data = _collect_brain_data(self._agents, self._bridge, profiles)
+        self.set_data(data)
 
 
 _REFS_RE = re.compile(r"\[\[([^\]\][]+)\]\]")

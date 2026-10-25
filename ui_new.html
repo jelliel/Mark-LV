@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THEOLOGICUS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #020608;
+            --panel-glass: rgba(6, 20, 30, 0.6);
+            --cyan-glow: #00f0ff;
+            --cyan-dim: rgba(0, 240, 255, 0.2);
+            --green-glow: #00ff66;
+            --text-muted: #6a8f9e;
+            --text-bright: #e0f7ff;
+            --font-main: 'Inter', sans-serif;
+            --font-display: 'Orbitron', sans-serif;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-muted);
+            font-family: var(--font-main);
+            height: 100vh;
+            overflow: hidden;
+            display: grid;
+            grid-template-columns: 220px 1fr 360px;
+            grid-template-rows: 70px 1fr 30px;
+            gap: 20px;
+            padding: 20px;
+            background-image:
+                radial-gradient(circle at 50% 50%, rgba(0, 240, 255, 0.05) 0%, transparent 60%),
+                radial-gradient(circle at 10% 10%, rgba(0, 255, 102, 0.03) 0%, transparent 40%);
+        }
+        body::after {
+            content: " "; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.15) 3px);
+            pointer-events: none; z-index: 9999;
+        }
+        header {
+            grid-column: 1 / -1;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0 30px;
+            border-bottom: 1px solid rgba(0, 240, 255, 0.1);
+            background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.05), transparent);
+        }
+        .logo {
+            font-family: var(--font-display);
+            font-size: 24px; font-weight: 900;
+            color: var(--text-bright);
+            letter-spacing: 8px;
+            text-shadow: 0 0 20px var(--cyan-glow);
+            display: flex; align-items: center; gap: 15px;
+        }
+        .logo-dot {
+            width: 10px; height: 10px; background: var(--green-glow);
+            border-radius: 50%; box-shadow: 0 0 15px var(--green-glow);
+            animation: pulse 2s infinite;
+        }
+        .clock-box { text-align: right; font-family: var(--font-display); }
+        .clock { font-size: 22px; color: var(--cyan-glow); letter-spacing: 2px; }
+        .date { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+        .panel {
+            background: var(--panel-glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(0, 240, 255, 0.15);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 0 20px rgba(0, 240, 255, 0.02);
+            display: flex; flex-direction: column;
+            position: relative; overflow: hidden;
+        }
+        .panel::before {
+            content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 1px;
+            background: linear-gradient(90deg, transparent, var(--cyan-glow), transparent);
+            animation: scanline 4s linear infinite; opacity: 0.5;
+        }
+        .panel-header {
+            font-family: var(--font-display);
+            font-size: 11px; color: var(--cyan-glow);
+            letter-spacing: 2px; text-transform: uppercase;
+            margin-bottom: 20px;
+            display: flex; justify-content: space-between; align-items: center;
+            opacity: 0.8;
+        }
+        .left-col { display: flex; flex-direction: column; gap: 15px; justify-content: flex-end; }
+        .btn-side {
+            background: rgba(0, 240, 255, 0.05);
+            border: 1px solid var(--cyan-dim);
+            color: var(--cyan-glow);
+            padding: 15px 10px;
+            border-radius: 12px;
+            font-family: var(--font-display);
+            font-size: 11px;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            display: flex; flex-direction: column; align-items: center; gap: 5px;
+        }
+        .btn-side:hover {
+            background: rgba(0, 240, 255, 0.15);
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
+            border-color: var(--cyan-glow);
+            transform: translateX(5px);
+        }
+        .btn-side.core { border-color: var(--green-glow); color: var(--green-glow); }
+        .btn-side.core:hover { background: rgba(0, 255, 102, 0.1); box-shadow: 0 0 20px rgba(0, 255, 102, 0.2); }
+        .center-col {
+            display: flex; justify-content: center; align-items: center;
+            position: relative;
+        }
+        .orb-container {
+            position: relative; width: 400px; height: 400px;
+            display: flex; justify-content: center; align-items: center;
+            transform-style: preserve-3d;
+            transition: transform 0.1s ease-out;
+        }
+        .ring {
+            position: absolute; border-radius: 50%;
+            border: 1px solid var(--cyan-dim);
+            box-shadow: 0 0 30px rgba(0, 240, 255, 0.1), inset 0 0 20px rgba(0, 240, 255, 0.1);
+        }
+        .ring-1 { width: 100%; height: 100%; border-width: 2px; border-top-color: var(--cyan-glow); border-bottom-color: transparent; animation: spin3D 20s linear infinite; transform: rotateX(70deg); }
+        .ring-2 { width: 85%; height: 85%; border-left-color: var(--cyan-glow); border-right-color: transparent; animation: spin3D 15s linear infinite reverse; transform: rotateY(60deg); }
+        .ring-3 { width: 70%; height: 70%; border-bottom-color: var(--green-glow); border-top-color: transparent; animation: spin3D 10s linear infinite; transform: rotateX(50deg) rotateY(30deg); }
+        .ring-4 { width: 50%; height: 50%; border: 2px dashed rgba(0, 240, 255, 0.3); animation: spin 30s linear infinite; }
+        .core {
+            position: absolute;
+            width: 120px; height: 120px;
+            background: radial-gradient(circle, #ffffff 0%, var(--cyan-glow) 30%, transparent 70%);
+            border-radius: 50%;
+            filter: blur(15px);
+            animation: breathe 3s ease-in-out infinite alternate;
+            z-index: 2;
+        }
+        .core-inner {
+            position: absolute;
+            width: 60px; height: 60px;
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 60px var(--cyan-glow), 0 0 120px var(--cyan-glow);
+            z-index: 3;
+            animation: pulse 2s infinite;
+        }
+        .orb-text {
+            position: absolute;
+            font-family: var(--font-display);
+            font-size: 18px; letter-spacing: 12px; color: #fff;
+            text-shadow: 0 0 25px var(--cyan-glow);
+            z-index: 10; pointer-events: none;
+            margin-left: 10px;
+        }
+        .particle {
+            position: absolute; background: var(--cyan-glow);
+            border-radius: 50%; pointer-events: none;
+            box-shadow: 0 0 10px var(--cyan-glow);
+        }
+        .status-badge {
+            position: absolute; bottom: -60px;
+            display: flex; align-items: center; gap: 10px;
+            background: rgba(0, 255, 102, 0.1);
+            border: 1px solid var(--green-glow);
+            padding: 8px 20px; border-radius: 30px;
+            color: var(--green-glow); font-family: var(--font-display); font-size: 11px;
+            letter-spacing: 2px; box-shadow: 0 0 25px rgba(0, 255, 102, 0.2);
+        }
+        .status-dot { width: 8px; height: 8px; background: var(--green-glow); border-radius: 50%; box-shadow: 0 0 10px var(--green-glow); animation: pulse 1.5s infinite; }
+        .right-col { display: flex; flex-direction: column; gap: 20px; }
+        .chat-log {
+            flex: 1; overflow-y: auto; font-size: 13px;
+            display: flex; flex-direction: column; gap: 15px;
+            padding-right: 10px;
+        }
+        .chat-log::-webkit-scrollbar { width: 4px; }
+        .chat-log::-webkit-scrollbar-thumb { background: var(--cyan-dim); border-radius: 4px; }
+        .msg { animation: slideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; opacity: 0; transform: translateX(20px); }
+        .msg-user { align-self: flex-end; max-width: 90%; background: rgba(0, 240, 255, 0.1); border: 1px solid rgba(0, 240, 255, 0.3); padding: 10px 15px; border-radius: 12px 12px 0 12px; color: var(--text-bright); }
+        .msg-sys { align-self: flex-start; max-width: 90%; background: rgba(0, 255, 102, 0.05); border: 1px solid rgba(0, 255, 102, 0.2); padding: 10px 15px; border-radius: 12px 12px 12px 0; color: #a0e0b0; }
+        .input-container {
+            display: flex; gap: 10px; margin-top: auto;
+            background: rgba(0,0,0,0.3); border: 1px solid var(--cyan-dim);
+            border-radius: 12px; padding: 5px; transition: all 0.3s ease;
+        }
+        .input-container:focus-within { border-color: var(--cyan-glow); box-shadow: 0 0 20px rgba(0, 240, 255, 0.2); }
+        input {
+            flex: 1; background: transparent; border: none; outline: none;
+            color: #fff; font-family: var(--font-main); font-size: 14px; padding: 10px 15px;
+        }
+        .btn-send {
+            background: var(--cyan-dim); border: none; border-radius: 8px;
+            width: 45px; color: var(--cyan-glow); cursor: pointer;
+            display: flex; justify-content: center; align-items: center;
+            transition: all 0.3s ease;
+        }
+        .btn-send:hover { background: var(--cyan-glow); color: #000; }
+        .btn-mic {
+            width: 100%; padding: 15px; margin-top: 10px;
+            background: transparent; border: 1px solid var(--cyan-dim); border-radius: 12px;
+            color: var(--cyan-glow); font-family: var(--font-display); font-size: 12px; letter-spacing: 2px;
+            cursor: pointer; transition: all 0.3s ease;
+            display: flex; justify-content: center; align-items: center; gap: 10px;
+        }
+        .btn-mic:hover { background: rgba(0, 240, 255, 0.1); border-color: var(--cyan-glow); }
+        .btn-mic.active { background: rgba(255, 42, 42, 0.1); border-color: #ff2a2a; color: #ff2a2a; box-shadow: 0 0 20px rgba(255, 42, 42, 0.3); }
+        .drop-zone {
+            border: 2px dashed var(--cyan-dim);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+        .drop-zone:hover, .drop-zone.drag-over {
+            border-color: var(--cyan-glow);
+            background: rgba(0, 240, 255, 0.05);
+            color: var(--cyan-glow);
+        }
+        footer {
+            grid-column: 1 / -1;
+            display: flex; justify-content: space-between;
+            font-size: 10px; color: rgba(255,255,255,0.2);
+            border-top: 1px solid rgba(255,255,255,0.05);
+            padding-top: 10px; letter-spacing: 1px;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        @keyframes spin3D { 0% { transform: rotateX(70deg) rotateZ(0deg); } 100% { transform: rotateX(70deg) rotateZ(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.1); } }
+        @keyframes breathe { 0% { transform: scale(0.9); opacity: 0.7; } 100% { transform: scale(1.2); opacity: 1; } }
+        @keyframes scanline { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+        @keyframes slideIn { to { opacity: 1; transform: translateX(0); } }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo"><div class="logo-dot"></div>THEOLOGICUS</div>
+        <div class="clock-box">
+            <div class="clock" id="clock">00:00:00</div>
+            <div class="date" id="date">---</div>
+        </div>
+    </header>
+
+    <aside class="left-col">
+        <button class="btn-side core" id="btn-ai-core">
+            <span style="font-size: 18px; margin-bottom: 5px;">◈</span>
+            AI CORE<br>ACTIVE
+        </button>
+        <button class="btn-side" id="btn-sec">
+            <span style="font-size: 18px; margin-bottom: 5px;">🛡</span>
+            SEC<br>CLEARED
+        </button>
+        <button class="btn-side" id="btn-proto" style="opacity: 0.5;">
+            <span style="font-size: 18px; margin-bottom: 5px;">⚙</span>
+            PROTOCOL<br>V
+        </button>
+    </aside>
+
+    <main class="center-col">
+        <div class="orb-container" id="orb-container">
+            <div class="ring ring-1"></div>
+            <div class="ring ring-2"></div>
+            <div class="ring ring-3"></div>
+            <div class="ring ring-4"></div>
+            <div class="core"></div>
+            <div class="core-inner"></div>
+            <div class="orb-text">THEOLOGICUS</div>
+            <div class="status-badge" id="status-badge">
+                <div class="status-dot"></div> LISTENING
+            </div>
+        </div>
+    </main>
+
+    <aside class="right-col">
+        <div class="panel" style="flex: 1;">
+            <div class="panel-header">ACTIVITY LOG</div>
+            <div class="chat-log" id="chat-log">
+                <div class="msg msg-sys">SYS: Initialisation du noyau...</div>
+                <div class="msg msg-sys">SYS: Connexion établie.</div>
+            </div>
+        </div>
+        <div class="panel">
+            <div class="input-container">
+                <input type="text" id="cmd-input" placeholder="Posez une question..." autocomplete="off">
+                <button class="btn-send" id="btn-send">➤</button>
+            </div>
+            <button class="btn-mic" id="btn-mic">🎤 MICROPHONE</button>
+        </div>
+        <div class="panel" id="file-upload-panel" style="display:none;">
+            <div class="panel-header">📁 FICHIER CHARGÉ</div>
+            <div id="file-info" style="font-size:12px; color:var(--text-muted); padding:5px 0;"></div>
+            <div class="drop-zone" id="drop-zone">
+                📂 Déposer un fichier ici ou cliquer pour parcourir
+                <input type="file" id="file-input" style="display:none;" accept="*/*">
+            </div>
+        </div>
+    </aside>
+
+    <footer>
+        <div>STATUS: SECURE • ENCRYPTION: AES-256</div>
+        <div>THEOLOGICUS v1.0</div>
+    </footer>
+
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script>
+        // Initialize Qt WebChannel bridge
+        new QWebChannel(window.qt.webChannelTransport, function(channel) {
+            window.bridge = channel.objects.bridge;
+
+            // Connect Python signals to JS handlers
+            window.bridge.log_message.connect(function(text) {
+                console.log('[PYTHON]', text);
+            });
+            window.bridge.state_changed.connect(function(state) {
+                console.log('[STATE]', state);
+            });
+            window.bridge.command_sent.connect(function(cmd) {
+                console.log('[COMMAND]', cmd);
+            });
+        });
+
+        // Helper to send messages to Python
+        function sendToPython(type, data) {
+            if (window.bridge) {
+                window.bridge[type](data);
+            }
+        }
+
+        // Clock
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString('fr-FR');
+            document.getElementById('date').innerText = now.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase();
+        }
+        setInterval(updateClock, 1000); updateClock();
+
+        // Parallax
+        const orbContainer = document.getElementById('orb-container');
+        document.addEventListener('mousemove', (e) => {
+            const x = (e.clientX / window.innerWidth - 0.5) * 15;
+            const y = (e.clientY / window.innerHeight - 0.5) * 15;
+            orbContainer.style.transform = `rotateX(${-y}deg) rotateY(${x}deg)`;
+        });
+
+        // Particles
+        function createParticle() {
+            const p = document.createElement('div');
+            p.classList.add('particle');
+            const size = Math.random() * 3 + 1;
+            p.style.width = size + 'px';
+            p.style.height = size + 'px';
+            const angle = Math.random() * Math.PI * 2;
+            const radius = Math.random() * 180 + 50;
+            p.style.left = `calc(50% + ${Math.cos(angle) * radius}px)`;
+            p.style.top = `calc(50% + ${Math.sin(angle) * radius}px)`;
+            p.animate([
+                { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+                { transform: `translate(${Math.cos(angle)*80}px, ${Math.sin(angle)*80 - 40}px) scale(0)`, opacity: 0 }
+            ], { duration: Math.random() * 2000 + 1000, easing: 'ease-out' }).onfinish = () => p.remove();
+            orbContainer.appendChild(p);
+        }
+        setInterval(createParticle, 150);
+
+        // Chat
+        const chatLog = document.getElementById('chat-log');
+        const input = document.getElementById('cmd-input');
+        let isMicActive = false;
+
+        function addMessage(text, isUser = false) {
+            const div = document.createElement('div');
+            div.className = `msg ${isUser ? 'msg-user' : 'msg-sys'}`;
+            div.innerText = text;
+            chatLog.appendChild(div);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        function sendCommand() {
+            const cmd = input.value.trim();
+            if (!cmd) return;
+            addMessage(cmd, true);
+            input.value = '';
+            setTimeout(() => {
+                addMessage('Commande reçue. Traitement en cours...');
+            }, 500);
+        }
+
+        input.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendCommand(); });
+        document.getElementById('btn-send').addEventListener('click', sendCommand);
+
+        // Mic toggle
+        document.getElementById('btn-mic').addEventListener('click', () => {
+            isMicActive = !isMicActive;
+            const btn = document.getElementById('btn-mic');
+            const badge = document.getElementById('status-badge');
+            if (isMicActive) {
+                btn.classList.add('active');
+                btn.innerHTML = '🔴 ÉCOUTE EN COURS...';
+                badge.style.color = '#ff2a2a';
+                badge.style.borderColor = '#ff2a2a';
+                badge.style.background = 'rgba(255, 42, 42, 0.1)';
+                badge.innerHTML = '<div class="status-dot" style="background:#ff2a2a; box-shadow:0 0 10px #ff2a2a;"></div> CAPTURING';
+                sendToPython('toggle_mic');
+            } else {
+                btn.classList.remove('active');
+                btn.innerHTML = '🎤 MICROPHONE';
+                badge.style.color = 'var(--green-glow)';
+                badge.style.borderColor = 'var(--green-glow)';
+                badge.style.background = 'rgba(0, 255, 102, 0.1)';
+                badge.innerHTML = '<div class="status-dot"></div> LISTENING';
+                sendToPython('toggle_mic');
+            }
+        });
+
+        // File upload
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const fileUploadPanel = document.getElementById('file-upload-panel');
+        
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file) handleFile(file);
+        });
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) handleFile(e.target.files[0]);
+        });
+        
+        function handleFile(file) {
+            const size = (file.size / 1024).toFixed(1) + ' KB';
+            document.getElementById('file-info').innerHTML = 
+                `<span style="color:var(--cyan-glow);">📄</span> ${file.name} • ${size}`;
+            fileUploadPanel.style.display = 'block';
+            sendToPython('log', '[FILE] ' + file.name);
+        }
+        
+        // Buttons
+        document.getElementById('btn-sec').addEventListener('click', () => sendToPython('sec_cleared_click'));
+        document.getElementById('btn-proto').addEventListener('click', () => sendToPython('protocol_click'));
+
+        // Handle Qt messages
+        window.onmessage = (e) => {
+            const data = e.data;
+            if (data.type === 'append_log') {
+                addMessage(data.text, data.isUser);
+            } else if (data.type === 'set_status') {
+                const badge = document.getElementById('status-badge');
+                const statusEl = document.createElement("div"); statusEl.textContent = data.status; badge.innerHTML = ""; badge.appendChild(document.createElement("div")).className = "status-dot"; badge.appendChild(statusEl);
+            }
+        };
+    </script>
+</body>
+</html>
