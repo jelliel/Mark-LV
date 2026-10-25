@@ -440,8 +440,13 @@
         
         function handleFile(file) {
             const size = (file.size / 1024).toFixed(1) + ' KB';
-            document.getElementById('file-info').innerHTML = 
-                `<span style="color:var(--cyan-glow);">📄</span> ${file.name} • ${size}`;
+            const fi = document.getElementById('file-info');
+            fi.textContent = '';
+            const icon = document.createElement('span');
+            icon.style.color = 'var(--cyan-glow)';
+            icon.textContent = '📄';
+            fi.appendChild(icon);
+            fi.appendChild(document.createTextNode(' ' + file.name + ' • ' + size));
             fileUploadPanel.style.display = 'block';
             sendToPython('log', '[FILE] ' + file.name);
         }
