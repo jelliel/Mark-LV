@@ -85,7 +85,7 @@ def _read_full_config() -> dict:
 
 # Single source of truth for the release name — the window title, the header
 # badge and the readme must never disagree again.
-APP_VERSION  = "THEOLOGICUS v1.0.1"
+APP_VERSION  = "THEOLOGICUS v1.0.2"
 APP_PROTOCOL = APP_VERSION.split()[-1]
 
 _DEFAULT_W, _DEFAULT_H = 980, 700
