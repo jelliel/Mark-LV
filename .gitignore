@@ -77,3 +77,4 @@ build/
 *.log
 __pycache__/
 *.egg-info/
+THEOLOGICUS-*.zip
