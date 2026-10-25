@@ -336,7 +336,7 @@ def ensure_app_volume(target: int = 100) -> bool:
     """Make sure JARVIS's own audio session is audible.
 
     Windows gives every process its own fader in the volume mixer, and that
-    fader is independent of the master. The screenshot showed JARVIS — MARK LV
+    fader is independent of the master. The screenshot showed JARVIS — THEOLOGICUS
     at 1%: the mic worked, the session connected, the transcript came back —
     but nothing was ever heard. This opens a short silent stream so the audio
     engine creates a session for this process, then raises that session's

@@ -32,7 +32,7 @@ from urllib.parse import urlparse, urlunparse
 from .util import clip, iso_now
 
 USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-              "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 MarkLV-Research/1.0")
+              "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 Theologicus-Research/1.0")
 MAX_BYTES = 2_500_000
 _BLOCKED_SUFFIXES = (".localhost", ".local", ".internal", ".lan")
 

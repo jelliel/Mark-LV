@@ -483,7 +483,7 @@ def _decide(result: dict) -> None:
     result["subject"] = subject
     best = max((r for r in result["matches"] if subject in r["matched"]),
                key=lambda r: (r["share"], r["score"]), default=None)
-    if best is None or best["share"] < 1.0:
+    if best is None or best["share"] < 0.5:
         result["gap"] = True
         result["reason"] = "mention unique"
 
