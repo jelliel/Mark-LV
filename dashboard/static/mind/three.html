@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Theologicus — Living Mind</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-color: #05070B;
+      --border-color: #1a4f5e;
+      --primary-cyan: #00f0ff;
+      --primary-green: #00ff41;
+      --text-main: #a0c0d0;
+      --font-display: 'Orbitron', sans-serif;
+      --font-mono: 'Share Tech Mono', monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      padding: 0 15px;
+      background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.1), transparent);
+      flex-shrink: 0;
+    }
+    .logo { font-family: var(--font-display); font-size: 14px; color: var(--primary-cyan); text-shadow: 0 0 10px var(--primary-cyan); letter-spacing: 2px; }
+    .clock { font-size: 11px; text-align: right; color: var(--primary-cyan); }
+    #mind-canvas-container {
+      flex: 1;
+      position: relative;
+      min-height: 400px;
+      background: var(--bg-color);
+    }
+    #mind-canvas-container canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+    }
+    .error-msg {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #ff6b6b;
+      font-size: 12px;
+      text-align: center;
+      display: none;
+    }
+    .vault-info {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(0,20,30,0.85);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 8px 12px;
+      color: var(--primary-cyan);
+      font-size: 10px;
+      min-width: 200px;
+    }
+    .vault-info div { margin-bottom: 3px; }
+    .vault-info .label { color: #5a8a9a; margin-right: 6px; }
+    .toolbar {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      display: flex;
+      gap: 6px;
+    }
+    .btn-reload {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--primary-cyan);
+      padding: 4px 10px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      cursor: pointer;
+      text-transform: uppercase;
+    }
+    .btn-reload:hover { background: rgba(0, 240, 255, 0.1); }
+    footer {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9px;
+      color: #444;
+      align-items: center;
+      border-top: 1px solid #1a2a30;
+      padding: 2px 10px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="logo">THEOLOGICUS — LIVING MIND</div>
+    <div class="clock" id="clock">--:--:--</div>
+  </header>
+
+  <div id="mind-canvas-container">
+    <div class="error-msg" id="error-msg"></div>
+  </div>
+
+  <div class="vault-info">
+    <div><span class="label">SOURCES</span><span id="mind-sources">0</span></div>
+    <div><span class="label">AGENTS</span><span id="mind-agents">0</span></div>
+    <div><span class="label">REGIONS</span><span id="mind-regions">0</span></div>
+    <div><span class="label">ACTIVE</span><span id="mind-active">0</span></div>
+  </div>
+
+  <div class="toolbar">
+    <button class="btn-reload" id="auto-reload" onclick="toggleAuto()">Auto-reload</button>
+    <button class="btn-reload" onclick="reloadSkeleton()">Reload</button>
+  </div>
+
+  <footer>
+    <div>Theologicus — Living Mind</div>
+    <div>Observer WS active</div>
+  </footer>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.174/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.174/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import * as dataModule from './data.js';
+    import * as regionsModule from './regions.js';
+    import { buildRegionMeshes } from './nodes.js';
+    import { buildEdges } from './edges.js';
+    import { buildCore, buildAgentNode } from './nodes.js';
+    import { uTime } from './nodes.js';
+
+    let autoReload = true;
+    let reloadTimer = null;
+
+    // ── Clock ───────────────────────────────────────────────────────────────
+    function updateClock() {
+      const d = new Date();
+      document.getElementById('clock').textContent =
+        d.toTimeString().slice(0, 8);
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // ── Apply data ──────────────────────────────────────────────────────────
+    async function init() {
+      try {
+        // Ensure container has dimensions before proceeding
+        const container = document.getElementById('mind-canvas-container');
+        await new Promise(resolve => setTimeout(resolve, 100)); // wait for layout
+
+        const w = container.clientWidth || 800;
+        const h = container.clientHeight || 400;
+        if (w < 100 || h < 100) {
+          console.error('[mind] Container too small:', w, 'x', h);
+          return;
+        }
+
+        await dataModule.loadSkeleton();
+        uTime.value = performance.now() / 1000;
+        rebuildGraph();
+        connectObserver();
+        startAutoReload();
+      } catch (e) {
+        console.error('[mind] init failed:', e);
+        const errEl = document.getElementById('error-msg');
+        if (errEl) {
+          errEl.textContent = 'Error: ' + e.message;
+          errEl.style.display = 'block';
+        }
+      }
+    }
+
+    async function applySkeleton(data) {
+      dataModule.applySkeleton(data);
+      rebuildGraph();
+      updatePanel(dataModule.state);
+    }
+
+    function rebuildGraph() {
+      const container = document.getElementById('mind-canvas-container');
+      // dispose old three.js objects if any
+      if (container._three) {
+        const t = container._three;
+        container._three.scene.traverse(o => {
+          if (o.isMesh) { if (o.geometry) o.geometry.dispose(); if (o.material) { if (Array.isArray(o.material)) o.material.forEach(m => m.dispose?.()); else o.material.dispose?.(); } }
+        });
+        t.renderer.dispose();
+        container.removeChild(t.renderer.domElement);
+      }
+
+      const w = container.clientWidth || 800;
+      const h = container.clientHeight || 400;
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(regionsModule.BACK_BG);
+      scene.fog = new THREE.FogExp2(regionsModule.BACK_BG, regionsModule.FOG_DENS);
+
+      const camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 200);
+      camera.position.set(14, 10, 16);
+      camera.lookAt(0, 0, 0);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(w, h);
+      container.appendChild(renderer.domElement);
+
+      const composer = new EffectComposer(renderer);
+      composer.addPass(new RenderPass(scene, camera));
+      const bloom = new UnrealBloomPass(
+        new THREE.Vector2(w, h),
+        1.15, 0.6, 0.72
+      );
+      composer.addPass(bloom);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 0.5;
+      controls.minDistance = 6;
+      controls.maxDistance = 40;
+
+      // Position nodes using layoutNodes
+      const positionsById = new Map();
+      const posMap = regionsModule.layoutNodes(dataModule.state.nodes, dataModule.state.edges);
+      for (const [id, p] of posMap) {
+        positionsById.set(id, new THREE.Vector3(p.x, p.y, p.z));
+      }
+
+      const group = new THREE.Group();
+      scene.add(group);
+
+      // Build all edges first (static curves), then node meshes.
+      const { group: edgeGroup, curveLookup, materials } = buildEdges(dataModule.state.edges, positionsById, regionsModule.COLORS);
+      group.add(edgeGroup);
+
+      // Build core star.
+      const core = buildCore(regionsModule.COLORS.core);
+      group.add(core.group);
+
+      // Build agent glow spheres at their positions.
+      const agents = dataModule.state.nodes.filter(n => n.type === 'agent');
+      for (const a of agents) {
+        const pos = positionsById.get(a.id);
+        if (!pos) continue;
+        const an = buildAgentNode(regionsModule.COLORS.agents, null);
+        an.position.copy(pos);
+        group.add(an);
+      }
+
+      // Build region node meshes.
+      for (const n of dataModule.state.nodes) {
+        if (n.type === 'agent') continue; // already added above
+        const pos = positionsById.get(n.id);
+        if (!pos) continue;
+        const size = regionsModule.NODE_SIZE[n.region] || 1;
+        const meshData = buildRegionMeshes([n], regionsModule.COLORS[n.region] || '#8B93A1', [pos]);
+        if (meshData) {
+          group.add(meshData.group);
+        }
+      }
+
+      // Render loop with idle camera drift.
+      let startTime = performance.now();
+      function animate() {
+        requestAnimationFrame(animate);
+        const now = performance.now();
+        const dt = (now - startTime) / 1000;
+        startTime = now;
+        uTime.value = now / 1000;
+        controls.target.y = 0.5 * Math.sin(dt * 0.8);
+        controls.update();
+        composer.render();
+      }
+      animate();
+
+      // Store reference for disposal on rebuild.
+      container._three = { renderer, scene, composer };
+
+      updatePanel(dataModule.state);
+    }
+
+    function connectObserver() {
+      const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(`${wsProtocol}//${location.host}/ws/observe`);
+      ws.onopen = () => console.info('[mind] observer connected');
+      ws.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch (_) { return; }
+        handleEvent(msg);
+      };
+      ws.onclose = () => console.info('[mind] observer closed');
+      ws.onerror = () => {};
+    }
+
+    function handleEvent(msg) {
+      switch (msg.type) {
+        case 'mind_map': applySkeleton(msg.data || msg); break;
+        case 'recall': {
+          const node = dataModule.byId.get(msg.node);
+          if (!node) return; emit('onNodeRecall', node); break;
+        }
+        case 'write': {
+          const node = dataModule.byId.get(msg.node);
+          emit('onNodeWrite', node || { id: msg.node, label: msg.label || msg.node }); break;
+        }
+        case 'agent_dispatch': {
+          const node = dataModule.byId.get(msg.node) || dataModule.byId.get(`agent:${msg.agent}`);
+          if (!node) return; emit('onAgentDispatch', node); break;
+        }
+        case 'agent_done': {
+          const node = dataModule.byId.get(msg.node) || dataModule.byId.get(`agent:${msg.agent}`);
+          if (!node) return;
+          const a = dataModule.activity.get(node.id) || {};
+          dataModule.activity.set(node.id, { ...a, active: false, lastSeen: performance.now() });
+          emit('onAgentDone', node); break;
+        }
+        case 'turn_complete': emit('onTurnComplete', msg); break;
+        case 'alert': emit('onAlert', msg); break;
+        default: break;
+      }
+    }
+
+    function emit(kind, payload) {
+      const evt = new CustomEvent(kind, { detail: payload });
+      document.dispatchEvent(evt);
+    }
+
+    function updatePanel(state) {
+      document.getElementById('mind-sources').textContent = (state.stats?.sources || 0);
+      document.getElementById('mind-agents').textContent = (state.stats?.regions?.agents?.count || 0);
+      document.getElementById('mind-regions').textContent = Object.keys(state.stats?.regions || {}).length;
+      document.getElementById('mind-active').textContent = dataModule.activity.size;
+    }
+
+    window.reloadSkeleton = function() {
+      fetch('/api/mind-map', { cache: 'no-store' })
+        .then(r => r.json()).then(applySkeleton)
+        .catch(err => console.error('[mind] reload error', err));
+    };
+
+    window.toggleAuto = function() {
+      autoReload = !autoReload;
+      const btn = document.getElementById('auto-reload');
+      if (btn) btn.textContent = autoReload ? 'Auto-reload ON' : 'Auto-reload OFF';
+      if (autoReload) startAutoReload(); else stopAutoReload();
+    };
+
+    function startAutoReload() {
+      if (!autoReload) return;
+      stopAutoReload();
+      reloadTimer = setInterval(() => {
+        window.reloadSkeleton();
+      }, 8000);
+    }
+
+    function stopAutoReload() {
+      if (reloadTimer) { clearInterval(reloadTimer); reloadTimer = null; }
+    }
+
+    // ── Resize ──────────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      const container = document.getElementById('mind-canvas-container');
+      if (!container._three) return;
+      const { renderer, scene, camera } = {
+        renderer: container._three.renderer,
+        scene: container._three.scene,
+        camera: container._three.renderer._camera || camera,
+      };
+      const w = container.clientWidth || 800;
+      const h = container.clientHeight || 400;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      const composer = container._three.composer;
+      if (composer) composer.setSize(w, h);
+    });
+
+    init();
+
+    // Also try after a delay in case layout wasn't ready
+    setTimeout(() => {
+      const container = document.getElementById('mind-canvas-container');
+      if (!container._three) {
+        console.warn('[mind] No renderer found, retrying init...');
+        init();
+      }
+    }, 500);
+
+    startAutoReload();
+  </script>
+</body>
+</html>
