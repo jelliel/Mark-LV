@@ -77,7 +77,8 @@ class AutoUpdater(QObject):
         try:
             temp_dir = Path(__file__).parent.parent / "temp_update"
             temp_dir.mkdir(exist_ok=True)
-            dest = temp_dir / info["name"]
+            safe_name = Path(info["name"]).name  # strip any directory components
+            dest = temp_dir / safe_name
 
             req = urllib.request.Request(info["url"], headers={
                 "User-Agent": f"THEOLOGICUS/{APP_VERSION}"
