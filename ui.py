@@ -85,7 +85,7 @@ def _read_full_config() -> dict:
 
 # Single source of truth for the release name — the window title, the header
 # badge and the readme must never disagree again.
-APP_VERSION  = "THEOLOGICUS v1.0.10"
+APP_VERSION  = "THEOLOGICUS v1.0.11"
 APP_PROTOCOL = APP_VERSION.split()[-1]
 
 _DEFAULT_W, _DEFAULT_H = 980, 700
@@ -2969,6 +2969,7 @@ class MainWindow(QMainWindow):
     _brain_panel_sig = pyqtSignal(dict)  # brain panel data
     _radar_fire_sig = pyqtSignal(str)  # agent starts processing
     _radar_stop_sig = pyqtSignal(str)  # agent finishes processing
+    _update_sig = pyqtSignal(dict)  # update available: {version, name, url, size}
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -3255,6 +3256,7 @@ class MainWindow(QMainWindow):
         self._brain_panel_sig.connect(self._show_brain_panel)
         self._radar_fire_sig.connect(self._on_radar_fire)
         self._radar_stop_sig.connect(self._on_radar_stop)
+        self._update_sig.connect(self._show_update_dialog)
         self._brain_panel: BrainPanel | None = None  # in-app second-brain dashboard
         self._cam_stop = threading.Event()
 
@@ -4812,6 +4814,48 @@ class MainWindow(QMainWindow):
                 self._brain_panel._radar_canvas.stop(agent_name)
             except Exception:
                 pass
+
+    def _show_update_dialog(self, info: dict) -> None:
+        """Thread-safe: show update available dialog."""
+        from PyQt6.QtWidgets import QMessageBox
+        ver = info.get("version", "?")
+        size_mb = info.get("size", 0) / 1024 / 1024
+        msg = (
+            f"检测到新版本 {ver}，大小约 {size_mb:.0f} MB。\n\n"
+            f"是否立即下载并安装？"
+        )
+        btn_update = QMessageBox.StandardButton.Yes
+        btn_skip = QMessageBox.StandardButton.No
+        ret = QMessageBox.question(
+            self, "THEOLOGICUS 更新", msg,
+            btn_update | btn_skip, btn_update
+        )
+        if ret == btn_update:
+            from core.auto_update import AutoUpdater
+            self._log.append_log(f"SYS: Downloading update {ver}...")
+            self.setEnabled(False)
+            threading.Thread(
+                target=self._do_update,
+                args=(AutoUpdater(), info),
+                daemon=True,
+            ).start()
+
+    def _do_update(self, updater, info: dict) -> None:
+        from PyQt6.QtCore import QCoreApplication
+        def progress(pct):
+            self._log.append_log(f"SYS: Downloading {pct:.0f}%")
+            QCoreApplication.processEvents()
+        try:
+            ok = updater.download_and_install(info, progress_callback=progress)
+            if ok:
+                self._log.append_log("SYS: Update installed. Restarting...")
+                self.close()
+            else:
+                self._log.append_log("ERR: Update failed.")
+                self.setEnabled(True)
+        except Exception as e:
+            self._log.append_log(f"ERR: {e}")
+            self.setEnabled(True)
 
     def _reposition_brain_panel(self):
         if self._brain_panel is None or not self._brain_panel.isVisible():
