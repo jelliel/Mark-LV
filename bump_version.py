@@ -15,7 +15,7 @@ current = m.group(1)
 parts = current.split(".")
 new = f"{parts[0]}.{parts[1]}.{int(parts[2])+1}"
 
-content = re.sub(rf'THEOLOGICUS\s+v{re.escape(current)}', f'THEOLOGICUS v{new}', content)
+content = re.sub(rf'THEOLOGICUS\s+v{re.escape(current)}', f'THEOLOGICUS-AI v{new}', content)
 ui_py.write_text(content, encoding="utf-8")
 
 print(f"Version: {current} -> {new}")
@@ -23,7 +23,7 @@ print(f"Version: {current} -> {new}")
 # Git operations
 for cmd in [
     ["git", "add", "ui.py"],
-    ["git", "commit", "-m", f"Bump version to THEOLOGICUS v{new}"],
+    ["git", "commit", "-m", f"Bump version to THEOLOGICUS-AI v{new}"],
     ["git", "push", "jelliel", "HEAD"],
 ]:
     r = subprocess.run(cmd, capture_output=True, text=True)
@@ -38,4 +38,4 @@ subprocess.run(["git", "push", "jelliel", f":refs/tags/v{new}"], capture_output=
 subprocess.run(["git", "tag", "-a", f"v{new}", "-m", f"Theologicus v{new}"], check=True)
 subprocess.run(["git", "push", "jelliel", f"v{new}"], check=True)
 
-print(f"SUCCESS: THEOLOGICUS v{new} pushed to jelliel/Mark-LV")
+print(f"SUCCESS: THEOLOGICUS-AI v{new} pushed to jelliel/Mark-LV")
