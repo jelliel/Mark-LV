@@ -4286,6 +4286,14 @@ class MainWindow(QMainWindow):
         settings_btn.clicked.connect(self._open_plugin_settings)
         lay.addWidget(settings_btn)
 
+        settings2_btn = QPushButton("⚙  SETTINGS")
+        settings2_btn.setFixedHeight(26)
+        settings2_btn.setFont(QFont("Courier New", 7))
+        settings2_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        settings2_btn.setStyleSheet(_BTN_STYLE_DIM)
+        settings2_btn.clicked.connect(self._open_settings)
+        lay.addWidget(settings2_btn)
+
         w.adjustSize()
         return w
 
@@ -5587,6 +5595,21 @@ class MainWindow(QMainWindow):
         ov.show()
         ov.raise_()
         self._plugin_settings_overlay = ov   # keep a reference so it isn't GC'd
+
+    def _open_settings(self):
+        """Open the comprehensive settings modal."""
+        from ui_settings import SettingsModal
+        cw = self.centralWidget()
+        ov = SettingsModal(parent=cw)
+        ow, oh = 680, 620
+        ov.setGeometry(
+            (cw.width()  - ow) // 2,
+            (cw.height() - oh) // 2,
+            ow, oh,
+        )
+        ov.show()
+        ov.raise_()
+        self._settings_overlay = ov
 
     # ── Clipboard intelligence ───────────────────────────────────────────────────
 
