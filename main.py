@@ -2685,7 +2685,7 @@ def main():
 
     # Start auto-update check in background
     updater = UpdateChecker()
-    updater.update_found.connect(ui.show_update_dialog)
+    updater.update_found.connect(ui._show_update_dialog)
     updater.start_check()
 
     def runner():

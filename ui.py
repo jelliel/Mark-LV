@@ -3964,7 +3964,11 @@ class MainWindow(QMainWindow):
             l.setStyleSheet(f"color: {color}; background: transparent;")
             return l
 
-        lay.addWidget(_badge(APP_VERSION, C.PRI_DIM))
+        self._version_label = _badge(APP_VERSION, C.PRI_DIM)
+        self._version_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._version_label.setToolTip("Click to check for updates")
+        self._version_label.clicked.connect(self._check_update_from_ui)
+        lay.addWidget(self._version_label)
         lay.addSpacing(8)
         self._drawer_btn = QPushButton("⚙")
         self._drawer_btn.setFixedSize(26, 26)
@@ -4847,6 +4851,43 @@ class MainWindow(QMainWindow):
                 args=(AutoUpdater(), info),
                 daemon=True,
             ).start()
+
+    def _check_update_from_ui(self):
+        """Show update check result when user clicks version badge."""
+        from PyQt6.QtWidgets import QMessageBox
+        import threading
+
+        self._log.append_log("SYS: Checking for updates...")
+
+        def _check():
+            from core.auto_update import AutoUpdater
+            updater = AutoUpdater()
+            info = updater._check_for_update()
+            if info:
+                ver = info.get("version", "?")
+                size_mb = info.get("size", 0) / 1024 / 1024
+                msg = f"New version {ver} available ({size_mb:.0f} MB)\n\nDownload and install?"
+                ret = QMessageBox.question(
+                    self, "Update Available", msg,
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
+                )
+                if ret == QMessageBox.StandardButton.Yes:
+                    self._log.append_log(f"SYS: Downloading {ver}...")
+                    self.setEnabled(False)
+                    threading.Thread(
+                        target=self._do_update,
+                        args=(updater, info),
+                        daemon=True,
+                    ).start()
+            else:
+                self._log.append_log(f"SYS: Up to date (v{APP_VERSION})")
+                QMessageBox.information(
+                    self, "Up to Date",
+                    f"You are running the latest version:\n{APP_VERSION}"
+                )
+
+        threading.Thread(target=_check, daemon=True).start()
 
     def _do_update(self, updater, info: dict) -> None:
         from PyQt6.QtCore import QCoreApplication
