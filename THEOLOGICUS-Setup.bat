@@ -41,7 +41,7 @@ copy /Y "%~dp0dist\THEOLOGICUS.exe" "%INSTALL_DIR%\dist\" >nul
 
 :: Create desktop shortcut
 echo [3/4] Creating shortcuts...
-powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\Theologicus.lnk'); $Shortcut.TargetPath = '%INSTALL_DIR%\dist\THEOLOGICUS.exe'; $Shortcut.WorkingDirectory = '%INSTALL_DIR%'; $Shortcut.IconLocation = '%INSTALL_DIR%\config\jarvis.ico'; $Shortcut.Save()"
+powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\Theologicus.lnk'); $Shortcut.TargetPath = '%INSTALL_DIR%\dist\THEOLOGICUS.exe'; $Shortcut.WorkingDirectory = '%INSTALL_DIR%'; $Shortcut.IconLocation = '%INSTALL_DIR%\config\theologicus.ico'; $Shortcut.Save()"
 
 :: Create uninstaller
 echo [4/4] Creating uninstaller...

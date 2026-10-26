@@ -3747,7 +3747,7 @@ class MainWindow(QMainWindow):
         desktop = self._get_desktop_dir()
 
         # Arc-reactor icon (.ico — also exported as .png for Linux/macOS)
-        ico_path = Path(__file__).resolve().parent / "config" / "jarvis.ico"
+        ico_path = Path(__file__).resolve().parent / "config" / "theologicus.ico"
         if not ico_path.exists():
             self._build_jarvis_icon(ico_path)
 

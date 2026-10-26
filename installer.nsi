@@ -20,8 +20,8 @@ SetCompressor lzma
 !insertmacro MUI_LANGUAGE "French"
 
 ; Icons
-!define MUI_ICON "config\jarvis.ico"
-!define MUI_UNICON "config\jarvis.ico"
+!define MUI_ICON "config\theologicus.ico"
+!define MUI_UNICON "config\theologicus.ico"
 
 ; Install section
 Section "THEOLOGICUS Core" SEC01
@@ -65,15 +65,15 @@ SectionEnd
 ; Start menu shortcuts
 Section "-Shortcuts"
     CreateDirectory "$SMPROGRAMS\Theologicus"
-    CreateShortcut "$SMPROGRAMS\Theologicus\Theologicus.lnk" "$INSTDIR\dist\THEOLOGICUS.exe" "" "$INSTDIR\config\jarvis.ico" 0
-    CreateShortcut "$SMPROGRAMS\Theologicus\Uninstall.lnk" "$INSTDIR\uninstall.exe" "" "$INSTDIR\config\jarvis.ico" 0
+    CreateShortcut "$SMPROGRAMS\Theologicus\Theologicus.lnk" "$INSTDIR\dist\THEOLOGICUS.exe" "" "$INSTDIR\config\theologicus.ico" 0
+    CreateShortcut "$SMPROGRAMS\Theologicus\Uninstall.lnk" "$INSTDIR\uninstall.exe" "" "$INSTDIR\config\theologicus.ico" 0
 SectionEnd
 
 ; Registry
 Section
     WriteRegStr HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Theologicus" "DisplayName" "THEOLOGICUS v1.0.5"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Theologicus" "UninstallString" "$INSTDIR\uninstall.exe"
-    WriteRegStr HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Theologicus" "DisplayIcon" "$INSTDIR\config\jarvis.ico"
+    WriteRegStr HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Theologicus" "DisplayIcon" "$INSTDIR\config\theologicus.ico"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Theologicus" "InstallLocation" "$INSTDIR"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Theologicus" "Publisher" "Theologicus AI"
 SectionEnd

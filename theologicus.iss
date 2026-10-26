@@ -52,10 +52,10 @@ Source: "memory\*"; DestDir: "{app}\memory"; Flags: recursesubdirs
 Source: "research\*"; DestDir: "{app}\research"; Flags: recursesubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\dist\THEOLOGICUS.exe"; IconFilename: "{app}\config\jarvis.ico"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\dist\THEOLOGICUS.exe"; IconFilename: "{app}\config\theologicus.ico"
 Name: "{group}\{#MyAppName} (Uninstall)"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\dist\THEOLOGICUS.exe"; IconFilename: "{app}\config\jarvis.ico"; Tasks: desktopicon
-Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#MyAppName}"; Filename: "{app}\dist\THEOLOGICUS.exe"; IconFilename: "{app}\config\jarvis.ico"; Tasks: quicklaunchicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\dist\THEOLOGICUS.exe"; IconFilename: "{app}\config\theologicus.ico"; Tasks: desktopicon
+Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#MyAppName}"; Filename: "{app}\dist\THEOLOGICUS.exe"; IconFilename: "{app}\config\theologicus.ico"; Tasks: quicklaunchicon
 
 [Code]
 procedure CurPageChanged(CurPageID: Integer);
