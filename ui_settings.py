@@ -1,6 +1,7 @@
 """THEOLOGICUS-AI Settings Modal - comprehensive settings dialog."""
 from pathlib import Path
 import json
+import os
 import sys
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -379,6 +380,8 @@ class SettingsModal(QDialog):
             data["xerj_memory_namespace"] = self._xerj_ns.text().strip()
 
             API_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
+            # Restrict permissions: only owner can read/write (prevents credential leakage)
+            os.chmod(API_FILE, 0o600)
             self.settings_changed.emit()
             self.close()
         except Exception as e:
