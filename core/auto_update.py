@@ -11,6 +11,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 APP_VERSION = "1.0.11"
 GITHUB_REPO = "jelliel/Theologicus-AI"
+APP_NAME = "THEOLOGICUS-AI"
 
 
 class AutoUpdater(QObject):
@@ -44,7 +45,7 @@ class AutoUpdater(QObject):
         try:
             url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
             req = urllib.request.Request(url, headers={
-                "User-Agent": f"THEOLOGICUS/{APP_VERSION}",
+                "User-Agent": f"THEOLOGICUS-AI/{APP_VERSION}",
                 "Accept": "application/vnd.github.v3+json"
             })
             with urllib.request.urlopen(req, timeout=10) as r:
@@ -81,7 +82,7 @@ class AutoUpdater(QObject):
             dest = temp_dir / safe_name
 
             req = urllib.request.Request(info["url"], headers={
-                "User-Agent": f"THEOLOGICUS/{APP_VERSION}"
+                "User-Agent": f"THEOLOGICUS-AI/{APP_VERSION}"
             })
             with urllib.request.urlopen(req, timeout=300) as r:
                 total = int(r.headers.get("content-length", 0))

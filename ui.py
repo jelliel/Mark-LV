@@ -85,7 +85,7 @@ def _read_full_config() -> dict:
 
 # Single source of truth for the release name — the window title, the header
 # badge and the readme must never disagree again.
-APP_VERSION  = "THEOLOGICUS v1.0.11"
+APP_VERSION  = "THEOLOGICUS-AI v1.0.11"
 APP_PROTOCOL = APP_VERSION.split()[-1]
 
 _DEFAULT_W, _DEFAULT_H = 980, 700
@@ -4827,7 +4827,7 @@ class MainWindow(QMainWindow):
         btn_update = QMessageBox.StandardButton.Yes
         btn_skip = QMessageBox.StandardButton.No
         ret = QMessageBox.question(
-            self, "THEOLOGICUS 更新", msg,
+            self, "THEOLOGICUS-AI 更新", msg,
             btn_update | btn_skip, btn_update
         )
         if ret == btn_update:
@@ -6152,7 +6152,7 @@ class RadarCanvas(QFrame):
         p.setPen(QColor(_BRAIN_CYAN))
         p.setFont(QFont(_FONT_H, 10, QFont.Weight.Bold))
         p.drawText(QRect(cx - 55, cy - 12, 110, 24),
-                   Qt.AlignmentFlag.AlignCenter, "THEOLOGICUS")
+                   Qt.AlignmentFlag.AlignCenter, "THEOLOGICUS-AI")
         p.end()
         self._phase = (self._phase + 1.5) % 360
         self.update()
@@ -6232,7 +6232,7 @@ class BrainPanel(QWidget):
         # Header
         hdr = QHBoxLayout()
         hdr.setContentsMargins(10, 8, 10, 6)
-        self._hdr_lbl = QLabel('◈  THEOLOGICUS — SECOND BRAIN')
+        self._hdr_lbl = QLabel('◈  THEOLOGICUS-AI — SECOND BRAIN')
         self._hdr_lbl.setFont(QFont(_FONT_H, 13, QFont.Weight.Bold))
         self._hdr_lbl.setStyleSheet(f'color: {_BRAIN_CYAN}; background: transparent;')
         hdr.addWidget(self._hdr_lbl)

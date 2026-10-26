@@ -1,7 +1,7 @@
 ; THEOLOGICUS Installer - Inno Setup 7
 ; Build: C:\Users\toshr\AppData\Local\Programs\Inno Setup 7\ISCC.exe theologicus.iss
 
-#define MyAppName "THEOLOGICUS"
+#define MyAppName "THEOLOGICUS-AI"
 #define MyAppVersion "1.0.11"
 #define MyAppPublisher "Ambassadeur"
 #define MyAppURL "https://github.com/jelliel/Theologicus-AI"
@@ -16,7 +16,7 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 OutputDir=.
-OutputBaseFilename=THEOLOGICUS-v{#MyAppVersion}-Setup
+OutputBaseFilename=THEOLOGICUS-AI-v{#MyAppVersion}-Setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
