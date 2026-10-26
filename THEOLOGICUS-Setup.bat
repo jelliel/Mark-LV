@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul 2>&1
 echo ========================================
-echo   THEOLOGICUS v1.0.10 - Installation
+echo   THEOLOGICUS v1.0.11 - Installation
 echo ========================================
 echo.
 
@@ -56,7 +56,7 @@ echo pause
 
 echo.
 echo ========================================
-echo   THEOLOGICUS v1.0.10 installed!
+echo   THEOLOGICUS v1.0.11 installed!
 echo ========================================
 echo Location: %INSTALL_DIR%
 echo Desktop shortcut created.
