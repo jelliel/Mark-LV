@@ -87,6 +87,7 @@ from core                      import confirm as confirm_gate
 from core                      import audio_devices
 from core.action_loader        import discover_actions
 from core.echo                 import EchoGuard
+from core.auto_update import UpdateChecker, APP_VERSION as AUTO_UPDATE_VERSION
 from core.viseme               import VisemeStream
 from core.wake_word            import (
     WakeWordDetector, is_ready as wake_is_ready, install_and_download as wake_install,
@@ -2681,6 +2682,11 @@ class JarvisLive:
 
 def main():
     ui = JarvisUI("face.png")
+
+    # Start auto-update check in background
+    updater = UpdateChecker()
+    updater.update_found.connect(ui.show_update_dialog)
+    updater.start_check()
 
     def runner():
         ui.wait_for_api_key()

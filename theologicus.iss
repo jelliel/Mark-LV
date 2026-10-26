@@ -2,7 +2,7 @@
 ; Build: C:\Users\toshr\AppData\Local\Programs\Inno Setup 7\ISCC.exe theologicus.iss
 
 #define MyAppName "THEOLOGICUS"
-#define MyAppVersion "1.0.9"
+#define MyAppVersion "1.0.11"
 #define MyAppPublisher "Ambassadeur"
 #define MyAppURL "https://github.com/jelliel/Theologicus-AI"
 

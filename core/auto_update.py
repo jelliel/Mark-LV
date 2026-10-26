@@ -9,7 +9,7 @@ import urllib.request
 from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
 
-APP_VERSION = "1.0.10"
+APP_VERSION = "1.0.11"
 GITHUB_REPO = "jelliel/Theologicus-AI"
 
 
