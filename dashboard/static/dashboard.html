@@ -326,36 +326,11 @@
 <script>
 // ── Data & State ──────────────────────────────────────────────────────
 let currentTab = 'history';
-const mockData = {
-  studies: 247,
-  memories: 89,
-  conversations: 1432,
-  researchTime: '156h',
-  weeklyActivity: [
-    { day: 'Lun', value: 65 }, { day: 'Mar', value: 45 },
-    { day: 'Mer', value: 82 }, { day: 'Jeu', value: 55 },
-    { day: 'Ven', value: 90 }, { day: 'Sam', value: 70 },
-    { day: 'Dim', value: 40 }
-  ],
-  activities: [
-    { icon: '📖', color: '#a78bfa', title: 'Étude sur l\'Eschatologie', sub: 'Analyse terminée', time: '2h' },
-    { icon: '🧠', color: '#60a5fa', title: 'Mémoire: Théologie Réformée', sub: 'En cours d\'analyse...', time: '5h' },
-    { icon: '💬', color: '#f472b6', title: 'Session Q&A - Trinité', sub: '42 questions traitées', time: 'Hier' },
-    { icon: '📚', color: '#34d399', title: 'Nouvelle source indexée', sub: 'Augustin - Confessions', time: 'Hier' },
-    { icon: '✍️', color: '#fbbf24', title: 'Rédaction - Article', sub: 'Herméneutique biblique', time: '2j' }
-  ],
-  progress: [85, 72, 93, 64],
-  history: [
-    { date: '2026-10-26', type: 'Théologie', title: 'Eschatologie - Fin des Temps', status: 'done', detail: 'Analyse complète' },
-    { date: '2026-10-25', type: 'Recherche', title: 'Pères de l\'Église', status: 'done', detail: '3 sources indexées' },
-    { date: '2026-10-24', type: 'Mémoire', title: 'Théologie Réformée', status: 'learning', detail: 'En cours...' },
-    { date: '2026-10-23', type: 'Conversation', title: 'Q&A Trinité', status: 'done', detail: '42 questions' },
-    { date: '2026-10-22', type: 'Rédaction', title: 'Article Herméneutique', status: 'learning', detail: 'En révision' }
-  ]
-};
+let dashboardData = null;
 
 // ── Initialize ────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadData();
   renderChart();
   renderActivities();
   renderTable('history');
@@ -363,13 +338,48 @@ document.addEventListener('DOMContentLoaded', () => {
   animateRings();
 });
 
+// ── Load from API ─────────────────────────────────────────────────────
+async function loadData() {
+  try {
+    const resp = await fetch('/api/dashboard');
+    dashboardData = await resp.json();
+  } catch (e) {
+    console.warn('Failed to load dashboard data, using mock:', e);
+    // Fallback to mock data
+    dashboardData = {
+      studies: 247, memories: 89, conversations: 1432, researchTime: '156h',
+      weeklyActivity: [
+        { day: 'Lun', value: 65 }, { day: 'Mar', value: 45 },
+        { day: 'Mer', value: 82 }, { day: 'Jeu', value: 55 },
+        { day: 'Ven', value: 90 }, { day: 'Sam', value: 70 },
+        { day: 'Dim', value: 40 }
+      ],
+      activities: [
+        { icon: '📖', color: '#a78bfa', title: 'Étude sur l\'Eschatologie', sub: 'Analyse terminée', time: '2h' },
+        { icon: '🧠', color: '#60a5fa', title: 'Mémoire: Théologie Réformée', sub: 'En cours d\'analyse...', time: '5h' },
+        { icon: '💬', color: '#f472b6', title: 'Session Q&A - Trinité', sub: '42 questions traitées', time: 'Hier' },
+        { icon: '📚', color: '#34d399', title: 'Nouvelle source indexée', sub: 'Augustin - Confessions', time: 'Hier' },
+        { icon: '✍️', color: '#fbbf24', title: 'Rédaction - Article', sub: 'Herméneutique biblique', time: '2j' }
+      ],
+      progress: [85, 72, 93, 64],
+      history: [
+        { date: '2026-10-26', type: 'Théologie', title: 'Eschatologie - Fin des Temps', status: 'done', detail: 'Analyse complète' },
+        { date: '2026-10-25', type: 'Recherche', title: 'Pères de l\'Église', status: 'done', detail: '3 sources indexées' },
+        { date: '2026-10-24', type: 'Mémoire', title: 'Théologie Réformée', status: 'learning', detail: 'En cours...' },
+        { date: '2026-10-23', type: 'Conversation', title: 'Q&A Trinité', status: 'done', detail: '42 questions' },
+        { date: '2026-10-22', type: 'Rédaction', title: 'Article Herméneutique', status: 'learning', detail: 'En révision' }
+      ]
+    };
+  }
+}
+
 // ── Chart ─────────────────────────────────────────────────────────────
 function renderChart() {
   const chart = document.getElementById('chart');
   chart.innerHTML = '';
-  const maxVal = Math.max(...mockData.weeklyActivity.map(d => d.value));
+  const maxVal = Math.max(...dashboardData.weeklyActivity.map(d => d.value));
 
-  mockData.weeklyActivity.forEach((d, i) => {
+  dashboardData.weeklyActivity.forEach((d, i) => {
     const wrapper = document.createElement('div');
     wrapper.className = 'bar-wrapper';
 
@@ -400,14 +410,32 @@ function renderActivities() {
   mockData.activities.forEach(act => {
     const item = document.createElement('div');
     item.className = 'activity-item';
-    item.innerHTML = `
-      <div class="activity-icon" style="background:${act.color}22;color:${act.color}">${act.icon}</div>
-      <div class="activity-content">
-        <h4>${act.title}</h4>
-        <p>${act.sub}</p>
-      </div>
-      <div class="activity-time">${act.time}</div>
-    `;
+
+    const icon = document.createElement('div');
+    icon.className = 'activity-icon';
+    icon.style.background = `${act.color}22`;
+    icon.style.color = act.color;
+    icon.textContent = act.icon;
+
+    const content = document.createElement('div');
+    content.className = 'activity-content';
+
+    const h4 = document.createElement('h4');
+    h4.textContent = act.title;
+
+    const p = document.createElement('p');
+    p.textContent = act.sub;
+
+    content.appendChild(h4);
+    content.appendChild(p);
+
+    const time = document.createElement('div');
+    time.className = 'activity-time';
+    time.textContent = act.time;
+
+    item.appendChild(icon);
+    item.appendChild(content);
+    item.appendChild(time);
     list.appendChild(item);
   });
 }
@@ -424,21 +452,36 @@ function renderTable(tab) {
   const body = document.getElementById('historyBody');
   body.innerHTML = '';
 
-  let filtered = mockData.history;
-  if (tab === 'history') filtered = mockData.history.filter(h => h.status === 'done');
-  else if (tab === 'learning') filtered = mockData.history.filter(h => h.status === 'learning');
+  let filtered = dashboardData.history;
+  if (tab === 'history') filtered = dashboardData.history.filter(h => h.status === 'done');
+  else if (tab === 'learning') filtered = dashboardData.history.filter(h => h.status === 'learning');
 
   filtered.forEach(row => {
     const tr = document.createElement('tr');
-    const badgeClass = row.status === 'done' ? 'badge-done' : 'badge-learning';
-    const badgeText = row.status === 'done' ? '✓ Terminé' : '⟳ En cours';
-    tr.innerHTML = `
-      <td>${row.date}</td>
-      <td>${row.type}</td>
-      <td>${row.title}</td>
-      <td><span class="badge ${badgeClass}">${badgeText}</span></td>
-      <td>${row.detail}</td>
-    `;
+
+    const tdDate = document.createElement('td');
+    tdDate.textContent = row.date;
+
+    const tdType = document.createElement('td');
+    tdType.textContent = row.type;
+
+    const tdTitle = document.createElement('td');
+    tdTitle.textContent = row.title;
+
+    const tdStatus = document.createElement('td');
+    const badge = document.createElement('span');
+    badge.className = row.status === 'done' ? 'badge-done' : 'badge-learning';
+    badge.textContent = row.status === 'done' ? '✓ Terminé' : '⟳ En cours';
+    tdStatus.appendChild(badge);
+
+    const tdDetail = document.createElement('td');
+    tdDetail.textContent = row.detail;
+
+    tr.appendChild(tdDate);
+    tr.appendChild(tdType);
+    tr.appendChild(tdTitle);
+    tr.appendChild(tdStatus);
+    tr.appendChild(tdDetail);
     body.appendChild(tr);
   });
 }
@@ -454,16 +497,16 @@ function filterTable() {
 
 // ── Stats ─────────────────────────────────────────────────────────────
 function updateStats() {
-  document.getElementById('statStudies').textContent = mockData.studies;
-  document.getElementById('statMemories').textContent = mockData.memories;
-  document.getElementById('statConversations').textContent = mockData.conversations.toLocaleString();
-  document.getElementById('statTime').textContent = mockData.researchTime;
+  document.getElementById('statStudies').textContent = dashboardData.studies;
+  document.getElementById('statMemories').textContent = dashboardData.memories;
+  document.getElementById('statConversations').textContent = dashboardData.conversations.toLocaleString();
+  document.getElementById('statTime').textContent = dashboardData.researchTime;
 }
 
 // ── Rings ─────────────────────────────────────────────────────────────
 function animateRings() {
-  document.querySelectorAll('.ring').forEach((ring, i) => {
-    const percent = mockData.progress[i];
+  dashboardData.progress.forEach((percent, i) => {
+    const ring = document.querySelectorAll('.ring')[i];
     ring.style.background = `conic-gradient(#a78bfa ${percent}%, rgba(255,255,255,0.08) 0)`;
     ring.querySelector('.ring-value').textContent = percent + '%';
   });

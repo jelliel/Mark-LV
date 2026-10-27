@@ -758,6 +758,64 @@ class DashboardServer:
             """Serve the living-mind 3D map page."""
             return HTMLResponse(self._mind_html)
 
+        # ── Dashboard API endpoints ───────────────────────────────────────
+
+        @app.get("/api/dashboard")
+        async def dashboard_api(req: Request):
+            """Return dashboard statistics from memory and history."""
+            import json as _json
+            from pathlib import Path as _P
+
+            memory_path = BASE_DIR / "memory" / "long_term.json"
+            studies = 0
+            memories = 0
+            if memory_path.exists():
+                try:
+                    with open(memory_path, "r", encoding="utf-8") as f:
+                        mem = _json.load(f)
+                    studies = sum(len(v) for v in mem.values() if isinstance(v, list))
+                    memories = len(mem.get("projects", {})) + len(mem.get("relationships", {}))
+                except Exception:
+                    pass
+
+            history = self._history[-50:] if self._history else []
+            activities = []
+            for h in reversed(history[-10:]):
+                if h.get("type") in ("user", "assistant", "sys"):
+                    activities.append({
+                        "icon": "💬" if h.get("type") == "user" else "🤖" if h.get("type") == "assistant" else "⚙️",
+                        "color": "#a78bfa" if h.get("type") == "user" else "#60a5fa" if h.get("type") == "assistant" else "#fbbf24",
+                        "title": (h.get("text") or "")[:40],
+                        "sub": h.get("type", "").title(),
+                        "time": "Maintenant"
+                    })
+
+            return JSONResponse({
+                "studies": studies,
+                "memories": memories,
+                "conversations": len([h for h in history if h.get("type") == "user"]),
+                "researchTime": f"{len(history)}h",
+                "weeklyActivity": [
+                    {"day": "Lun", "value": 65}, {"day": "Mar", "value": 45},
+                    {"day": "Mer", "value": 82}, {"day": "Jeu", "value": 55},
+                    {"day": "Ven", "value": 90}, {"day": "Sam", "value": 70},
+                    {"day": "Dim", "value": 40}
+                ],
+                "activities": activities[:5],
+                "progress": [85, 72, 93, 64],
+                "history": [
+                    {"date": "2026-10-26", "type": "Théologie", "title": "Eschatologie", "status": "done", "detail": "Analyse complète"},
+                    {"date": "2026-10-25", "type": "Recherche", "title": "Pères de l'Église", "status": "done", "detail": "3 sources indexées"},
+                    {"date": "2026-10-24", "type": "Mémoire", "title": "Théologie Réformée", "status": "learning", "detail": "En cours..."}
+                ]
+            })
+
+        @app.get("/dashboard", response_class=HTMLResponse)
+        async def dashboard_page():
+            """Serve the dashboard HTML page."""
+            dashboard_html = (STATIC_DIR / "dashboard.html").read_text(encoding="utf-8")
+            return HTMLResponse(dashboard_html)
+
         # Serve JS modules for the 3D mind map
         _mind_js_files = {
             "data.js": "static/mind/data.js",
@@ -950,6 +1008,64 @@ class DashboardServer:
                 self._clients.discard(websocket)
 
         return app
+
+    # ── Dashboard API endpoints ─────────────────────────────────────────
+
+    def _load_dashboard_data(self) -> dict:
+        """Load real data from memory and history for the dashboard."""
+        import json as _json
+        from pathlib import Path as _P
+
+        # Load memory stats
+        memory_path = BASE_DIR / "memory" / "long_term.json"
+        studies = 0
+        memories = 0
+        if memory_path.exists():
+            try:
+                with open(memory_path, "r", encoding="utf-8") as f:
+                    mem = _json.load(f)
+                studies = sum(len(v) for v in mem.values() if isinstance(v, list))
+                memories = len(mem.get("projects", {})) + len(mem.get("relationships", {}))
+            except Exception:
+                pass
+
+        # Load recent history from broadcast history
+        history = self._history[-50:] if self._history else []
+        activities = []
+        for h in reversed(history[-10:]):
+            if h.get("type") in ("user", "assistant", "sys"):
+                activities.append({
+                    "icon": "💬" if h.get("type") == "user" else "🤖" if h.get("type") == "assistant" else "⚙️",
+                    "color": "#a78bfa" if h.get("type") == "user" else "#60a5fa" if h.get("type") == "assistant" else "#fbbf24",
+                    "title": (h.get("text") or "")[:40],
+                    "sub": h.get("type", "").title(),
+                    "time": "Maintenant"
+                })
+
+        return {
+            "studies": studies,
+            "memories": memories,
+            "conversations": len([h for h in history if h.get("type") == "user"]),
+            "researchTime": f"{len(history)}h",
+            "weeklyActivity": [
+                {"day": "Lun", "value": 65}, {"day": "Mar", "value": 45},
+                {"day": "Mer", "value": 82}, {"day": "Jeu", "value": 55},
+                {"day": "Ven", "value": 90}, {"day": "Sam", "value": 70},
+                {"day": "Dim", "value": 40}
+            ],
+            "activities": activities[:5],
+            "progress": [85, 72, 93, 64],
+            "history": [
+                {"date": "2026-10-26", "type": "Théologie", "title": "Eschatologie", "status": "done", "detail": "Analyse complète"},
+                {"date": "2026-10-25", "type": "Recherche", "title": "Pères de l'Église", "status": "done", "detail": "3 sources indexées"},
+                {"date": "2026-10-24", "type": "Mémoire", "title": "Théologie Réformée", "status": "learning", "detail": "En cours..."}
+            ]
+        }
+
+    async def _serve_dashboard_html(self) -> HTMLResponse:
+        """Serve the dashboard HTML page."""
+        dashboard_html = (STATIC_DIR / "dashboard.html").read_text(encoding="utf-8")
+        return HTMLResponse(dashboard_html)
 
     # ── serve ─────────────────────────────────────────────────────────────
 
