@@ -2697,6 +2697,19 @@ def main():
             print("\n🔴 Shutting down...")
 
     threading.Thread(target=runner, daemon=True).start()
+
+    # Start dashboard server in a separate thread (non-blocking)
+    def start_dashboard():
+        import subprocess as _sp
+        _dashboard_proc = _sp.Popen(
+            [sys.executable, str(Path(__file__).parent / "run_dashboard.py")],
+            cwd=str(Path(__file__).parent),
+            creationflags=_WIN_HIDE.get("creationflags", 0),
+        )
+        print("[JARVIS] Dashboard server started on port 9999")
+
+    threading.Thread(target=start_dashboard, daemon=True).start()
+
     ui.root.mainloop()
 
 if __name__ == "__main__":
