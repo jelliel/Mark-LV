@@ -12,7 +12,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-PORT = 8765  # Use a different port to avoid conflicts
+PORT = 9999  # Use a different port to avoid conflicts
 
 def get_local_ip():
     """Get local IP address."""
