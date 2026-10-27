@@ -9,7 +9,7 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QScrollArea, QGroupBox, QFormLayout, QSpinBox, QComboBox, QFrame,
-    QFileDialog, QColorDialog, QApplication
+    QFileDialog, QColorDialog, QApplication, QWidget
 )
 
 # Import color constants from ui module
