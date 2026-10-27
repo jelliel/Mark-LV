@@ -90,19 +90,26 @@ def start_server():
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            if self.path == "/" or self.path == "/dashboard":
+            # Strip any query parameters for matching
+            path = self.path.split('?')[0]
+            print(f"[DEBUG] Request path: {self.path!r} -> matched: {path!r}")
+
+            if path in ("", "/", "/dashboard"):
                 self.send_response(200)
                 self.send_header("Content-type", "text/html; charset=utf-8")
                 self.end_headers()
                 self.wfile.write(dashboard_html.encode("utf-8"))
-            elif self.path == "/api/dashboard":
+            elif path == "/api/dashboard":
                 self.send_response(200)
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
             else:
+                print(f"[DEBUG] 404 for path: {self.path!r}")
                 self.send_response(404)
+                self.send_header("Content-type", "text/plain")
                 self.end_headers()
+                self.wfile.write(f"404 Not Found: {self.path}".encode("utf-8"))
 
         def log_message(self, format, *args):
             pass  # Suppress default logging
