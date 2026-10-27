@@ -5974,6 +5974,10 @@ class JarvisUI:
         """Thread-safe: stop the radar for an agent end."""
         self._win._radar_stop_sig.emit(agent_name)
 
+    def show_update_dialog(self, info: dict):
+        """Delegate update dialog to MainWindow."""
+        self._win._show_update_dialog(info)
+
     def wait_for_api_key(self):
         while not self._win._ready:
             time.sleep(0.1)
