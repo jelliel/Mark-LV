@@ -32,6 +32,7 @@ from PyQt6.QtCore import (
     QPoint, QPropertyAnimation, QRect, QRectF, QSize, QSizeF, Qt, QTimer,
     QUrl, pyqtSignal,
 )
+from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import (
     QBrush, QColor, QConicalGradient, QDragEnterEvent, QDropEvent, QFont,
     QFontDatabase, QKeySequence, QLinearGradient, QPainter, QPainterPath,
@@ -3980,6 +3981,21 @@ class MainWindow(QMainWindow):
         self._version_label.setToolTip("Click to check for updates")
         self._version_label.clicked.connect(self._check_update_from_ui)
         lay.addWidget(self._version_label)
+        lay.addSpacing(8)
+        self._dashboard_btn = QPushButton("📊")
+        self._dashboard_btn.setFixedSize(26, 26)
+        self._dashboard_btn.setFont(QFont("Courier New", 11))
+        self._dashboard_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._dashboard_btn.setToolTip("打开数据看板")
+        self._dashboard_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {C.TEXT_DIM};
+                border: 1px solid {C.BORDER}; border-radius: 4px;
+            }}
+            QPushButton:hover {{ color: {C.PRI}; border-color: {C.PRI_DIM}; }}
+        """)
+        self._dashboard_btn.clicked.connect(self._open_dashboard)
+        lay.addWidget(self._dashboard_btn)
         lay.addSpacing(8)
         self._drawer_btn = QPushButton("⚙")
         self._drawer_btn.setFixedSize(26, 26)
