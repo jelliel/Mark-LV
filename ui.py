@@ -4916,6 +4916,11 @@ class MainWindow(QMainWindow):
 
         threading.Thread(target=_check, daemon=True).start()
 
+    def _open_dashboard(self):
+        """Open the dashboard in the default browser."""
+        import webbrowser
+        webbrowser.open("http://localhost:8000/dashboard")
+
     def _do_update(self, updater, info: dict) -> None:
         from PyQt6.QtCore import QCoreApplication
         def progress(pct):
