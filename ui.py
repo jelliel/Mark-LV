@@ -2946,6 +2946,14 @@ class RemoteKeyOverlay(QWidget):
         self.closed.emit()
 
 
+class ClickableLabel(QLabel):
+    clicked = pyqtSignal()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+
+
 class MainWindow(QMainWindow):
     _log_sig        = pyqtSignal(str)
     _refs_sig       = pyqtSignal(str)        # assistant reply text → [[references]] chips
@@ -3964,7 +3972,8 @@ class MainWindow(QMainWindow):
             l.setStyleSheet(f"color: {color}; background: transparent;")
             return l
 
-        self._version_label = _badge(APP_VERSION, C.PRI_DIM)
+        self._version_label = ClickableLabel(_badge(txt, C.PRI_DIM))
+        self._version_label.setText(APP_VERSION)
         self._version_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self._version_label.setToolTip("Click to check for updates")
         self._version_label.clicked.connect(self._check_update_from_ui)
