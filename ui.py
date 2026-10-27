@@ -3972,8 +3972,10 @@ class MainWindow(QMainWindow):
             l.setStyleSheet(f"color: {color}; background: transparent;")
             return l
 
-        self._version_label = ClickableLabel(_badge(txt, C.PRI_DIM))
+        self._version_label = ClickableLabel()
         self._version_label.setText(APP_VERSION)
+        self._version_label.setFont(QFont("Courier New", 8))
+        self._version_label.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent;")
         self._version_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self._version_label.setToolTip("Click to check for updates")
         self._version_label.clicked.connect(self._check_update_from_ui)
