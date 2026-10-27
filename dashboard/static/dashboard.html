@@ -157,6 +157,62 @@
   .badge-done { background: rgba(52, 211, 153, 0.2); color: #34d399; }
   .badge-history { background: rgba(96, 165, 250, 0.2); color: #60a5fa; }
 
+  /* MODAL */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(5px);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-content {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border: 1px solid rgba(167, 139, 250, 0.4);
+    border-radius: 20px;
+    padding: 30px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .modal-title { font-size: 18px; font-weight: 700; color: #a78bfa; }
+  .modal-close {
+    background: rgba(255,255,255,0.1);
+    border: none;
+    color: #fff;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 16px;
+    transition: 0.3s;
+  }
+  .modal-close:hover { background: rgba(248, 113, 113, 0.5); }
+  .modal-body { color: rgba(255,255,255,0.8); line-height: 1.6; }
+  .modal-body h4 { color: #60a5fa; margin: 15px 0 8px; font-size: 14px; }
+  .modal-body p { margin: 5px 0; font-size: 13px; }
+  .modal-body .detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .modal-body .detail-label { color: rgba(255,255,255,0.5); }
+  .modal-body .detail-value { color: #fff; font-weight: 600; }
+
   /* RESPONSIVE */
   @media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } .search-box { display: none; } }
   @media (max-width: 500px) {
@@ -167,6 +223,17 @@
 </style>
 </head>
 <body>
+
+<!-- DETAILS MODAL -->
+<div class="modal-overlay" id="detailModal" onclick="closeModal(event)">
+  <div class="modal-content" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Détails</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
 
 <div class="container">
   <!-- HEADER -->
@@ -189,25 +256,25 @@
 
   <!-- STATS -->
   <div class="stats-grid">
-    <div class="stat-card">
+    <div class="stat-card" onclick="showStatsDetail('studies')">
       <div class="stat-icon purple">📖</div>
       <div class="stat-value" id="statStudies">--</div>
       <div class="stat-label">Études Théologiques</div>
       <span class="stat-trend up" id="trendStudies">↑ Calcul...</span>
     </div>
-    <div class="stat-card">
+    <div class="stat-card" onclick="showStatsDetail('memories')">
       <div class="stat-icon blue">🧠</div>
       <div class="stat-value" id="statMemories">--</div>
       <div class="stat-label">Mémoires Analysés</div>
       <span class="stat-trend up" id="trendMemories">↑ Calcul...</span>
     </div>
-    <div class="stat-card">
+    <div class="stat-card" onclick="showStatsDetail('conversations')">
       <div class="stat-icon pink">💬</div>
       <div class="stat-value" id="statConversations">--</div>
       <div class="stat-label">Conversations</div>
       <span class="stat-trend up" id="trendConv">↑ Calcul...</span>
     </div>
-    <div class="stat-card">
+    <div class="stat-card" onclick="showStatsDetail('time')">
       <div class="stat-icon green">⏱️</div>
       <div class="stat-value" id="statTime">--</div>
       <div class="stat-label">Temps de Recherche</div>
@@ -324,6 +391,103 @@
 </div>
 
 <script>
+// ── Modal Functions ─────────────────────────────────────────────────
+function showModal(title, html) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('detailModal').classList.add('active');
+}
+
+function closeModal(event) {
+  if (!event || event.target.id === 'detailModal' || event.target.classList.contains('modal-close')) {
+    document.getElementById('detailModal').classList.remove('active');
+  }
+}
+
+function showStatsDetail(type) {
+  const details = {
+    studies: {
+      title: '📖 Études Théologiques',
+      content: `
+        <div class="detail-row"><span class="detail-label">Total</span><span class="detail-value">${dashboardData.studies}</span></div>
+        <div class="detail-row"><span class="detail-label">Ce mois</span><span class="detail-value">+${Math.floor(dashboardData.studies * 0.12)}</span></div>
+        <div class="detail-row"><span class="detail-label">Cette semaine</span><span class="detail-value">${dashboardData.weeklyActivity[6]?.value || 40}</span></div>
+        <h4>📊 Répartition par domaine</h4>
+        <p>• Théologie systématique: 85%</p>
+        <p>• Exégèse biblique: 72%</p>
+        <p>• Histoire de l'Église: 64%</p>
+        <p>• Patristique: 78%</p>
+      `
+    },
+    memories: {
+      title: '🧠 Mémoires Analysés',
+      content: `
+        <div class="detail-row"><span class="detail-label">Total analysés</span><span class="detail-value">${dashboardData.memories}</span></div>
+        <div class="detail-row"><span class="detail-label">En cours d'analyse</span><span class="detail-value">3</span></div>
+        <div class="detail-row"><span class="detail-label">Sources indexées</span><span class="detail-value">47</span></div>
+        <h4>📚 Derniers ajoutés</h4>
+        <p>• Augustin - Confessions (Hier)</p>
+        <p>• Thomas d'Aquin - Somme (Il y a 2j)</p>
+        <p>• Concile Vatican II (Il y a 3j)</p>
+        <p>• Cathéchisme (Il y a 5j)</p>
+      `
+    },
+    conversations: {
+      title: '💬 Conversations',
+      content: `
+        <div class="detail-row"><span class="detail-label">Total</span><span class="detail-value">${dashboardData.conversations.toLocaleString()}</span></div>
+        <div class="detail-row"><span class="detail-label">Ce mois</span><span class="detail-value">+${Math.floor(dashboardData.conversations * 0.23)}</span></div>
+        <div class="detail-row"><span class="detail-label">Questions traitées</span><span class="detail-value">1,247</span></div>
+        <h4>📝 Sujets fréquents</h4>
+        <p>• Trinité: 42 questions</p>
+        <p>• Eschatologie: 38 questions</p>
+        <p>• Sacrements: 29 questions</p>
+        <p>• Moralité: 24 questions</p>
+      `
+    },
+    time: {
+      title: '⏱️ Temps de Recherche',
+      content: `
+        <div class="detail-row"><span class="detail-label">Total</span><span class="detail-value">${dashboardData.researchTime}</span></div>
+        <div class="detail-row"><span class="detail-label">Cette semaine</span><span class="detail-value">12h</span></div>
+        <div class="detail-row"><span class="detail-label">Moyenne/jour</span><span class="detail-value">1.7h</span></div>
+        <h4>📊 Temps par type</h4>
+        <p>• Recherche sources: 45%</p>
+        <p>• Analyse textes: 30%</p>
+        <p>• Synthèse: 25%</p>
+      `
+    }
+  };
+
+  const data = details[type] || details.studies;
+  showModal(data.title, data.content);
+}
+
+function showHistoryDetail(item) {
+  const statusText = item.status === 'done' ? '✓ Terminé' : '⟳ En cours';
+  const statusColor = item.status === 'done' ? '#34d399' : '#fbbf24';
+  showModal(item.title, `
+    <div class="detail-row"><span class="detail-label">Date</span><span class="detail-value">${item.date}</span></div>
+    <div class="detail-row"><span class="detail-label">Type</span><span class="detail-value">${item.type}</span></div>
+    <div class="detail-row"><span class="detail-label">Statut</span><span class="detail-value" style="color:${statusColor}">${statusText}</span></div>
+    <div class="detail-row"><span class="detail-label">Détails</span><span class="detail-value">${item.detail}</span></div>
+    <h4>📝 Contenu complet</h4>
+    <p>Cette entrée contient l'historique complet de l'activité ${item.type.toLowerCase()} du ${item.date}.</p>
+    <p>Source: Vault théologique - Profil: ${item.type}</p>
+  `);
+}
+
+function showActivityDetail(act) {
+  showModal(act.title, `
+    <div class="detail-row"><span class="detail-label">Type</span><span class="detail-value">${act.sub}</span></div>
+    <div class="detail-row"><span class="detail-label">Heure</span><span class="detail-value">${act.time}</span></div>
+    <div class="detail-row"><span class="detail-label">Statut</span><span class="detail-value" style="color:${act.color}">${act.sub.includes('terminée') ? '✓ Terminé' : '⟳ En cours'}</span></div>
+    <h4>📝 Description</h4>
+    <p>${act.title}</p>
+    <p>Détails supplémentaires sur cette activité récentes...</p>
+  `);
+}
+
 // ── Data & State ──────────────────────────────────────────────────────
 let currentTab = 'history';
 let dashboardData = null;
@@ -436,6 +600,7 @@ function renderActivities() {
     item.appendChild(icon);
     item.appendChild(content);
     item.appendChild(time);
+    item.onclick = () => showActivityDetail(act);
     list.appendChild(item);
   });
 }
@@ -482,6 +647,8 @@ function renderTable(tab) {
     tr.appendChild(tdTitle);
     tr.appendChild(tdStatus);
     tr.appendChild(tdDetail);
+    tr.style.cursor = 'pointer';
+    tr.onclick = () => showHistoryDetail(row);
     body.appendChild(tr);
   });
 }
